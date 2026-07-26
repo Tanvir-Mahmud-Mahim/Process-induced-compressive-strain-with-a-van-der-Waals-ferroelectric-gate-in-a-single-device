@@ -223,9 +223,10 @@ for e, col in zip([0.0, -0.5], [OI["black"], OI["blue"]]):
     # present in p-FET gate-voltage convention: VG = -x
     ax.semilogy(-xs_f, I_f * 1e6, color=col, label=rf"$\epsilon$ = {e:+.1f}%")
     ax.semilogy(-xs_b, I_b * 1e6, color=col)
-ax.annotate("", xy=(-vtf0, 1e-2), xytext=(-vtb0, 1e-2),
-            arrowprops=dict(arrowstyle="<->", color="gray", lw=0.8))
-ax.text(-0.5 * (vtf0 + vtb0), 2.2e-2, f"MW = {mw0:.2f} V", ha="center", fontsize=7)
+ax.annotate("", xy=(-vtf0, 1e-4), xytext=(-vtb0, 1e-4),
+            arrowprops=dict(arrowstyle="<->", color="0.35", lw=1.0))
+ax.text(1.35, 1e-4, f"MW = {mw0:.2f} V", ha="left", va="center",
+        fontsize=7.5, color="0.2")
 ax.set_xlabel(r"$V_{\rm G}$ (V)")
 ax.set_ylabel(r"$|I_{\rm D}|$ ($\mu$A)")
 ax.legend(frameon=True, loc="lower left", borderpad=0.5)
@@ -384,41 +385,113 @@ save(fig, "fig5_circuit")
 
 # ======================================================================
 print("[5/6] Concept figure ...")
-fig, axs = plt.subplots(1, 3, figsize=(7.0, 2.5),
-                        gridspec_kw={"width_ratios": [1.15, 1, 1]})
-ax = axs[0]
-ax.set_xlim(0, 10)
-ax.set_ylim(0, 10)
-ax.axis("off")
-layers = [
-    (1.2, 1.0, "p++ Si / SiO$_2$", "#c8c8c8"),
-    (2.2, 0.7, "Al$_2$O$_3$", "#e0d6f5"),
-    (2.9, 0.45, "WSe$_2$ (1L, compressed)", OI["sky"]),
-    (3.35, 0.9, "h-BN", "#d3f0e0"),
-    (4.25, 0.55, "floating gate (M)", "#f5d9a8"),
-    (4.8, 1.6, "CIPS (FE)", "#f2b8b8"),
-    (6.4, 0.6, "top gate (M)", "#f5d9a8"),
-]
-for y0, h, lab, colr in layers:
-    ax.add_patch(Rectangle((1.6, y0), 6.8, h, facecolor=colr,
-                           edgecolor="k", lw=0.5))
-    ax.text(5.0, y0 + h / 2, lab, ha="center", va="center", fontsize=6.6)
-# stressor arrows
-ax.annotate("", xy=(1.8, 3.12), xytext=(0.4, 3.12),
-            arrowprops=dict(arrowstyle="-|>", color=OI["blue"], lw=1.6))
-ax.annotate("", xy=(8.2, 3.12), xytext=(9.6, 3.12),
-            arrowprops=dict(arrowstyle="-|>", color=OI["blue"], lw=1.6))
-ax.text(0.25, 2.35, r"$\epsilon < 0$", color=OI["blue"], fontsize=8)
-ax.add_patch(Rectangle((0.9, 2.7), 0.7, 0.85, facecolor="#ffe28a",
-                       edgecolor="k", lw=0.5))
-ax.add_patch(Rectangle((8.4, 2.7), 0.7, 0.85, facecolor="#ffe28a",
-                       edgecolor="k", lw=0.5))
-ax.text(1.25, 2.05, "S", ha="center", va="top", fontsize=7.5)
-ax.text(8.75, 2.05, "D", ha="center", va="top", fontsize=7.5)
-ax.set_title("Strained p-type MFMIS FeFET", fontsize=8)
-panel_label(ax, "(a)", dx=-0.02)
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+from matplotlib.patches import FancyBboxPatch
 
-ax = axs[1]
+fig = plt.figure(figsize=(7.2, 2.75))
+gs = fig.add_gridspec(1, 3, width_ratios=[1.35, 0.95, 0.95],
+                      left=0.005, right=0.985, top=0.90, bottom=0.06,
+                      wspace=0.30)
+
+# ------------------------- (a) 3D exploded device stack ----------------
+axA = fig.add_subplot(gs[0], projection="3d")
+axA.set_axis_off()
+axA.view_init(elev=16, azim=-64)
+try:
+    axA.set_box_aspect((10, 6.5, 7.2))
+except Exception:
+    pass
+
+def box3d(ax, x0, x1, y0, y1, z0, z1, color, alpha=1.0, lw=0.4):
+    v = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
+         (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+    faces = [[v[0], v[1], v[2], v[3]], [v[4], v[5], v[6], v[7]],
+             [v[0], v[1], v[5], v[4]], [v[2], v[3], v[7], v[6]],
+             [v[1], v[2], v[6], v[5]], [v[0], v[3], v[7], v[4]]]
+    pc = Poly3DCollection(faces, facecolor=color, edgecolor="k",
+                          linewidths=lw, alpha=alpha)
+    pc.set_sort_zpos((z0 + z1) / 2.0)
+    ax.add_collection3d(pc)
+
+GAP = 0.42
+z = 0.0
+layers3d = [
+    ("p++ Si / SiO$_2$",   1.00, "#c9c9c9", (0.0, 10.0)),
+    ("Al$_2$O$_3$",        0.45, "#e0d6f5", (0.0, 10.0)),
+    ("WSe$_2$ (1L)",       0.16, OI["sky"], (1.6, 8.4)),
+    ("h-BN",               0.45, "#cdebdb", (0.0, 10.0)),
+    ("floating gate (M)",  0.32, "#f3d8a4", (0.6, 9.4)),
+    ("CIPS (FE)",          0.85, "#f1b8b8", (0.0, 10.0)),
+    ("top gate (M)",       0.32, "#f3d8a4", (0.6, 9.4)),
+]
+z_centers = {}
+for name, th, colr, (xx0, xx1) in layers3d:
+    if name == "WSe$_2$ (1L)":
+        # source/drain pads flanking the channel at the same level
+        box3d(axA, 0.0, 1.55, 0.0, 6.5, z - 0.06, z + th + 0.16, "#f8c86a")
+        box3d(axA, 8.45, 10.0, 0.0, 6.5, z - 0.06, z + th + 0.16, "#f8c86a")
+    box3d(axA, xx0, xx1, 0.0, 6.5, z, z + th, colr)
+    z_centers[name] = z + th / 2.0
+    z += th + GAP
+
+axA.set_xlim(-0.5, 13.8)
+axA.set_ylim(-0.5, 7.0)
+axA.set_zlim(-0.4, z + 0.2)
+axA.set_title("Strained p-type MFMIS FeFET", fontsize=8.5, pad=2, x=0.44)
+
+# ---- transparent 2D overlay for labels, arrows, and leader lines ------
+from mpl_toolkits.mplot3d import proj3d
+fig.canvas.draw()
+
+def to_axes_frac(x, y, zz):
+    x2, y2, _ = proj3d.proj_transform(x, y, zz, axA.get_proj())
+    disp = axA.transData.transform((x2, y2))
+    return tuple(axA.transAxes.inverted().transform(disp))
+
+axOv = fig.add_axes(axA.get_position())
+axOv.set_xlim(0, 1)
+axOv.set_ylim(0, 1)
+axOv.axis("off")
+axOv.set_facecolor("none")
+axOv.text(-0.055, 1.10, "(a)", transform=axOv.transAxes,
+          fontweight="bold", fontsize=10, va="top")
+
+label_x = 0.76
+for name, _, colr, (xx0, xx1) in layers3d:
+    zc_l = z_centers[name]
+    if name == "WSe$_2$ (1L)":
+        tip = to_axes_frac(6.6, 0.15, zc_l + 0.05)
+    else:
+        tip = to_axes_frac(xx1 - 0.3, 1.2, zc_l)
+    anchor = to_axes_frac(10.0, 6.4, zc_l)
+    axOv.annotate(name, xy=tip, xytext=(label_x, anchor[1] + 0.02),
+                  fontsize=6.6, ha="left", va="center",
+                  arrowprops=dict(arrowstyle="-", color="0.55", lw=0.55,
+                                  shrinkA=1.5, shrinkB=1.0),
+                  annotation_clip=False, clip_on=False)
+
+zc = z_centers["WSe$_2$ (1L)"]
+for xpad, lab, dx in [(0.6, "S", -0.05), (9.4, "D", 0.05)]:
+    tip = to_axes_frac(xpad, 0.15, zc + 0.3)
+    axOv.annotate(lab, xy=tip, xytext=(tip[0] + dx, tip[1] - 0.10),
+                  fontsize=7.5, ha="center", va="top", fontweight="bold",
+                  color="0.15",
+                  arrowprops=dict(arrowstyle="-", color="0.55", lw=0.55,
+                                  shrinkA=1.0, shrinkB=1.0),
+                  annotation_clip=False)
+
+pL = to_axes_frac(-0.15, 0.2, zc)
+pR = to_axes_frac(10.15, 0.2, zc)
+for tip, tail in [(pL, (pL[0] - 0.12, pL[1])), (pR, (pR[0] + 0.10, pR[1]))]:
+    axOv.annotate("", xy=tip, xytext=tail,
+                  arrowprops=dict(arrowstyle="-|>", color=OI["blue"],
+                                  lw=2.2, shrinkA=0, shrinkB=1),
+                  annotation_clip=False)
+axOv.text(0.36, 0.02, r"biaxial compression $\epsilon<0$",
+          fontsize=7.2, color=OI["blue"], ha="center")
+
+# ------------------------- (b) valley schematic ------------------------
+ax = fig.add_subplot(gs[1])
 kk = np.linspace(-1, 1, 200)
 E_K = -2.2 * (kk - 0.55) ** 2
 E_G = -0.157 - 1.0 * (kk + 0.45) ** 2
@@ -440,27 +513,33 @@ ax.legend(frameon=False, fontsize=6.8, loc="upper left", ncol=1,
 ax.spines["left"].set_visible(True)
 panel_label(ax, "(b)", dx=-0.06)
 
-ax = axs[2]
+# ------------------------- (c) workflow chart --------------------------
+ax = fig.add_subplot(gs[2])
 ax.axis("off")
-steps = ["Two-valley strained\ntransport (calibrated\nto full-band data)",
-         "Multidomain CIPS\nLandau-Khalatnikov +\nPreisach model",
-         "Self-consistent\nMFMIS electrostatics",
-         "Nonvolatile logic:\nVTC, SNM, restore,\ndelay and energy"]
-cols = [OI["sky"], "#f2b8b8", "#d3f0e0", "#f5d9a8"]
-for i, (s_, colr) in enumerate(zip(steps, cols)):
-    y = 8.6 - 2.35 * i
-    ax.add_patch(Rectangle((0.6, y - 1.55), 8.6, 1.9,
-                           facecolor=colr, edgecolor="k", lw=0.5))
-    ax.text(4.9, y - 0.6, s_, ha="center", va="center", fontsize=6.2)
-    if i < 3:
-        ax.annotate("", xy=(4.9, y - 1.95), xytext=(4.9, y - 1.6),
-                    arrowprops=dict(arrowstyle="-|>", color="k", lw=1.0))
 ax.set_xlim(0, 10)
 ax.set_ylim(0, 10)
-ax.set_title("Multiscale workflow", fontsize=8)
+steps = ["Two-valley strained transport\n(calibrated to full-band data)",
+         "Multidomain CIPS model\n(Preisach + LK kinetics)",
+         "Self-consistent MFMIS\nelectrostatics",
+         "Nonvolatile logic: VTC, SNM,\nrestore, delay, energy"]
+cols = [OI["sky"], "#f1b8b8", "#cdebdb", "#f3d8a4"]
+BH, GAPC = 1.72, 0.72
+y_top = 9.45
+for i, (s_, colr) in enumerate(zip(steps, cols)):
+    y1 = y_top - i * (BH + GAPC)
+    y0 = y1 - BH
+    ax.add_patch(FancyBboxPatch((0.55, y0), 8.9, BH,
+                                boxstyle="round,pad=0.06,rounding_size=0.22",
+                                facecolor=colr, edgecolor="0.25", lw=0.7))
+    ax.text(5.0, (y0 + y1) / 2.0, s_, ha="center", va="center",
+            fontsize=6.6)
+    if i < 3:
+        ax.annotate("", xy=(5.0, y0 - GAPC + 0.10), xytext=(5.0, y0 - 0.10),
+                    arrowprops=dict(arrowstyle="-|>", color="0.25", lw=1.1))
+ax.set_title("Multiscale simulation chain", fontsize=8.5, pad=2)
 panel_label(ax, "(c)", dx=-0.02)
-fig.tight_layout()
 save(fig, "fig1_concept")
+
 
 # ======================================================================
 print("[6/6] Supplementary figures ...")
