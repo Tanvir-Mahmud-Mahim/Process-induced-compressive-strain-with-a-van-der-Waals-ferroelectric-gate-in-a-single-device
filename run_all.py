@@ -388,65 +388,89 @@ print("[5/6] Concept figure ...")
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib.patches import FancyBboxPatch
 
-fig = plt.figure(figsize=(7.2, 2.75))
-gs = fig.add_gridspec(1, 3, width_ratios=[1.35, 0.95, 0.95],
+fig = plt.figure(figsize=(7.2, 2.9))
+gs = fig.add_gridspec(1, 3, width_ratios=[1.52, 0.92, 0.94],
                       left=0.005, right=0.985, top=0.90, bottom=0.06,
                       wspace=0.30)
 
 # ------------------------- (a) 3D exploded device stack ----------------
 axA = fig.add_subplot(gs[0], projection="3d")
 axA.set_axis_off()
-axA.view_init(elev=16, azim=-64)
+axA.set_proj_type("ortho")
+axA.view_init(elev=17, azim=-62)
 try:
-    axA.set_box_aspect((10, 6.5, 7.2))
+    axA.set_box_aspect((10, 6.5, 8.2))
 except Exception:
     pass
 
-def box3d(ax, x0, x1, y0, y1, z0, z1, color, alpha=1.0, lw=0.4):
+
+def shade(hexcol, f):
+    """Darken a hex color by factor f (0..1)."""
+    import matplotlib.colors as mc
+    r, g, b = mc.to_rgb(hexcol)
+    return (r * f, g * f, b * f)
+
+
+def box3d(ax, x0, x1, y0, y1, z0, z1, color, lw=0.45):
+    """Axis-aligned box: one collection, per-face shading, correct zsort."""
     v = [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
          (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
-    faces = [[v[0], v[1], v[2], v[3]], [v[4], v[5], v[6], v[7]],
-             [v[0], v[1], v[5], v[4]], [v[2], v[3], v[7], v[6]],
-             [v[1], v[2], v[6], v[5]], [v[0], v[3], v[7], v[4]]]
-    pc = Poly3DCollection(faces, facecolor=color, edgecolor="k",
-                          linewidths=lw, alpha=alpha)
+    faces = [
+        ([v[0], v[1], v[2], v[3]], 0.60),   # bottom
+        ([v[2], v[3], v[7], v[6]], 0.92),   # back
+        ([v[0], v[3], v[7], v[4]], 0.78),   # left side
+        ([v[1], v[2], v[6], v[5]], 0.70),   # right side (x = x1)
+        ([v[0], v[1], v[5], v[4]], 0.86),   # front (y = y0)
+        ([v[4], v[5], v[6], v[7]], 1.00),   # top
+    ]
+    pc = Poly3DCollection([f[0] for f in faces],
+                          facecolors=[shade(color, f[1]) for f in faces],
+                          edgecolor=shade(color, 0.35), linewidths=lw,
+                          zsort="max")
     pc.set_sort_zpos((z0 + z1) / 2.0)
-    ax.add_collection3d(pc)
+    axA.add_collection3d(pc)
 
-GAP = 0.42
+
+GAP = 0.50
 z = 0.0
+# name, thickness, color, (x0, x1); drawn bottom to top
 layers3d = [
-    ("p++ Si / SiO$_2$",   1.00, "#c9c9c9", (0.0, 10.0)),
-    ("Al$_2$O$_3$",        0.45, "#e0d6f5", (0.0, 10.0)),
-    ("WSe$_2$ (1L)",       0.16, OI["sky"], (1.6, 8.4)),
-    ("h-BN",               0.45, "#cdebdb", (0.0, 10.0)),
-    ("floating gate (M)",  0.32, "#f3d8a4", (0.6, 9.4)),
-    ("CIPS (FE)",          0.85, "#f1b8b8", (0.0, 10.0)),
-    ("top gate (M)",       0.32, "#f3d8a4", (0.6, 9.4)),
+    ("p++ Si (back gate)",  0.85, "#bdbdbd", (0.0, 10.0)),
+    ("SiO$_2$",             0.42, "#e8e8e8", (0.0, 10.0)),
+    ("Al$_2$O$_3$",         0.42, "#ddd2f2", (0.0, 10.0)),
+    ("WSe$_2$ (1L)",        0.16, OI["sky"], (0.0, 10.0)),
+    ("h-BN",                0.45, "#c9e9d8", (0.0, 10.0)),
+    ("floating gate (M)",   0.32, "#f3d8a4", (0.6, 9.4)),
+    ("CIPS (FE)",           0.95, "#f1b4b4", (0.0, 10.0)),
+    ("top gate (M)",        0.32, "#f3d8a4", (0.6, 9.4)),
 ]
 z_centers = {}
+z_tops = {}
 for name, th, colr, (xx0, xx1) in layers3d:
-    if name == "WSe$_2$ (1L)":
-        # source/drain pads flanking the channel at the same level
-        box3d(axA, 0.0, 1.55, 0.0, 6.5, z - 0.06, z + th + 0.16, "#f8c86a")
-        box3d(axA, 8.45, 10.0, 0.0, 6.5, z - 0.06, z + th + 0.16, "#f8c86a")
     box3d(axA, xx0, xx1, 0.0, 6.5, z, z + th, colr)
+    if name == "WSe$_2$ (1L)":
+        # S/D contact pads sit ON TOP of the channel ends (Zhao 2026 style)
+        for px0, px1 in [(0.0, 1.8), (8.2, 10.0)]:
+            box3d(axA, px0, px1, 0.0, 6.5, z + th, z + th + 0.42, "#f8c86a")
     z_centers[name] = z + th / 2.0
+    z_tops[name] = z + th
     z += th + GAP
 
 axA.set_xlim(-0.5, 13.8)
 axA.set_ylim(-0.5, 7.0)
 axA.set_zlim(-0.4, z + 0.2)
-axA.set_title("Strained p-type MFMIS FeFET", fontsize=8.5, pad=2, x=0.44)
+axA.set_title("Strained p-type MFMIS FeFET", fontsize=9.5, pad=2, x=0.44)
 
 # ---- transparent 2D overlay for labels, arrows, and leader lines ------
 from mpl_toolkits.mplot3d import proj3d
 fig.canvas.draw()
 
+
 def to_axes_frac(x, y, zz):
     x2, y2, _ = proj3d.proj_transform(x, y, zz, axA.get_proj())
     disp = axA.transData.transform((x2, y2))
     return tuple(axA.transAxes.inverted().transform(disp))
+
 
 axOv = fig.add_axes(axA.get_position())
 axOv.set_xlim(0, 1)
@@ -456,40 +480,67 @@ axOv.set_facecolor("none")
 axOv.text(-0.055, 1.10, "(a)", transform=axOv.transAxes,
           fontweight="bold", fontsize=10, va="top")
 
-label_x = 0.76
+label_x = 0.755
+tips, ys = [], []
 for name, _, colr, (xx0, xx1) in layers3d:
     zc_l = z_centers[name]
     if name == "WSe$_2$ (1L)":
-        tip = to_axes_frac(6.6, 0.15, zc_l + 0.05)
+        tips.append(to_axes_frac(6.4, 0.15, zc_l + 0.04))
     else:
-        tip = to_axes_frac(xx1 - 0.3, 1.2, zc_l)
-    anchor = to_axes_frac(10.0, 6.4, zc_l)
-    axOv.annotate(name, xy=tip, xytext=(label_x, anchor[1] + 0.02),
-                  fontsize=6.6, ha="left", va="center",
-                  arrowprops=dict(arrowstyle="-", color="0.55", lw=0.55,
-                                  shrinkA=1.5, shrinkB=1.0),
+        tips.append(to_axes_frac(xx1 - 0.3, 1.1, zc_l))
+    ys.append(to_axes_frac(10.0, 6.4, zc_l)[1] + 0.02)
+# enforce a minimum vertical gap between labels (top to bottom)
+MINGAP = 0.088
+order = np.argsort(ys)[::-1]
+for rank in range(1, len(order)):
+    i_hi, i_lo = order[rank - 1], order[rank]
+    if ys[i_hi] - ys[i_lo] < MINGAP:
+        ys[i_lo] = ys[i_hi] - MINGAP
+for (name, _, colr, _x), tip, yl in zip(layers3d, tips, ys):
+    axOv.annotate(name, xy=tip, xytext=(label_x, yl),
+                  fontsize=7.6, ha="left", va="center",
+                  arrowprops=dict(arrowstyle="-", color="0.5", lw=0.6,
+                                  shrinkA=4.0, shrinkB=1.0),
                   annotation_clip=False, clip_on=False)
 
 zc = z_centers["WSe$_2$ (1L)"]
-for xpad, lab, dx in [(0.6, "S", -0.05), (9.4, "D", 0.05)]:
-    tip = to_axes_frac(xpad, 0.15, zc + 0.3)
-    axOv.annotate(lab, xy=tip, xytext=(tip[0] + dx, tip[1] - 0.10),
-                  fontsize=7.5, ha="center", va="top", fontweight="bold",
-                  color="0.15",
-                  arrowprops=dict(arrowstyle="-", color="0.55", lw=0.55,
-                                  shrinkA=1.0, shrinkB=1.0),
-                  annotation_clip=False)
+zt = z_tops["WSe$_2$ (1L)"]
+# S / D letters on the visible contact pad front faces (2D overlay)
+for xpad, lab in [(0.9, "S"), (9.15, "D")]:
+    p = to_axes_frac(xpad, 0.0, zt + 0.21)
+    axOv.text(p[0], p[1], lab, fontsize=8.5, ha="center", va="center",
+              fontweight="bold", color="0.12")
 
+# holes in the channel (front face)
+for xh in [3.4, 5.0, 6.6]:
+    p = to_axes_frac(xh, 0.0, zc)
+    axOv.text(p[0], p[1], "+", fontsize=8, ha="center", va="center",
+              color="white", fontweight="bold")
+
+# ferroelectric polarization arrows on the CIPS front face
+zF0 = z_centers["CIPS (FE)"] - 0.34
+zF1 = z_centers["CIPS (FE)"] + 0.34
+for xp in [2.2, 4.1, 6.0, 7.9]:
+    a0 = to_axes_frac(xp, 0.0, zF0)
+    a1 = to_axes_frac(xp, 0.0, zF1)
+    axOv.annotate("", xy=a1, xytext=a0,
+                  arrowprops=dict(arrowstyle="-|>", color="#8f2f2f",
+                                  lw=1.3, shrinkA=0, shrinkB=0),
+                  annotation_clip=False)
+pP = to_axes_frac(0.55, 0.0, z_centers["CIPS (FE)"])
+axOv.text(pP[0] - 0.030, pP[1] + 0.010, r"$P$", fontsize=9,
+          color="#8f2f2f", ha="right", fontstyle="italic")
+
+# biaxial compression arrows at the channel level
 pL = to_axes_frac(-0.15, 0.2, zc)
 pR = to_axes_frac(10.15, 0.2, zc)
-for tip, tail in [(pL, (pL[0] - 0.12, pL[1])), (pR, (pR[0] + 0.10, pR[1]))]:
+for tip, tail in [(pL, (pL[0] - 0.115, pL[1])), (pR, (pR[0] + 0.10, pR[1]))]:
     axOv.annotate("", xy=tip, xytext=tail,
                   arrowprops=dict(arrowstyle="-|>", color=OI["blue"],
-                                  lw=2.2, shrinkA=0, shrinkB=1),
+                                  lw=2.4, shrinkA=0, shrinkB=1),
                   annotation_clip=False)
-axOv.text(0.36, 0.02, r"biaxial compression $\epsilon<0$",
-          fontsize=7.2, color=OI["blue"], ha="center")
-
+axOv.text(0.36, 0.012, r"biaxial compression $\epsilon<0$",
+          fontsize=8, color=OI["blue"], ha="center")
 # ------------------------- (b) valley schematic ------------------------
 ax = fig.add_subplot(gs[1])
 kk = np.linspace(-1, 1, 200)
@@ -501,8 +552,8 @@ ax.plot(kk, E_G, color="gray", ls="--", label=r"$\Gamma$, $\epsilon=0$")
 ax.plot(kk, E_Gc, color=OI["blue"], label=r"$\Gamma$, compressed")
 ax.annotate("", xy=(-0.45, -0.52), xytext=(-0.45, -0.22),
             arrowprops=dict(arrowstyle="-|>", color=OI["blue"], lw=1.4))
-ax.text(-0.40, -0.76, "IV scattering\nsuppressed", fontsize=6.8,
-        color=OI["blue"], ha="center")
+ax.text(-0.60, -0.90, "IV scattering\nsuppressed", fontsize=6.8,
+        color=OI["blue"], ha="center", va="center")
 ax.set_ylim(-1.05, 0.42)
 ax.set_xticks([])
 ax.set_yticks([])
@@ -734,7 +785,7 @@ axp.plot([-1, 0], [1.24, 1.24], "o-", ms=3, color=OI["purple"], lw=1.6)
 axp.set_ylim(0, 2); axp.set_xticks([-1, 0]); axp.set_yticks([0, 1, 2])
 axp.tick_params(labelsize=6, pad=1.5)
 axp.set_xlabel("strain (%)", fontsize=6.5, labelpad=1)
-axp.set_title("window unchanged", fontsize=7.5, pad=2, color=OI["purple"])
+axp.set_title("window preserved", fontsize=7.5, pad=2, color=OI["purple"])
 
 # --- right: outcome ---
 axC = fig.add_subplot(gs[2])
