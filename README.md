@@ -7,6 +7,9 @@ Memory: A Multiscale Simulation Study".
 Repository:
 https://github.com/Tanvir-Mahmud-Mahim/Process-induced-compressive-strain-with-a-van-der-Waals-ferroelectric-gate-in-a-single-device
 
+Archived release (code, benchmarks, and figure data):
+https://doi.org/10.5281/zenodo.22084360
+
 ## Requirements
 
 Python 3.10+ with numpy, scipy, matplotlib:
