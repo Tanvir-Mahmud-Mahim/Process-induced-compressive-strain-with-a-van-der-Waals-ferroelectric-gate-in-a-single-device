@@ -36,7 +36,12 @@ plt.rcParams.update({
     "axes.spines.top": False, "axes.spines.right": False,
     "legend.framealpha": 0.9, "legend.edgecolor": "0.85",
     "legend.fancybox": False,
-    "font.family": "DejaVu Sans"})
+    # Times New Roman appearance (Liberation Serif is the metric-identical
+    # Times New Roman clone; STIX matches Times-style math)
+    "font.family": "serif",
+    "font.serif": ["Times New Roman", "Liberation Serif", "STIXGeneral",
+                   "DejaVu Serif"],
+    "mathtext.fontset": "stix"})
 
 
 def save(fig, name):
@@ -235,7 +240,7 @@ panel_label(ax, "(a)")
 ax = axs[0, 1]
 ax.plot(tFE_grid * 1e9, mw_t, "o-", color=OI["green"], ms=4)
 ax.axvline(86.5, color="gray", lw=0.7, ls=":")
-ax.text(64, 0.4, "expt. stack\n(Lee 2026)", fontsize=6.5)
+ax.text(61, 0.66, "expt. stack\n(Lee 2026)", fontsize=6.5)
 ax.set_xlabel(r"CIPS thickness $t_{\rm FE}$ (nm)")
 ax.set_ylabel("Memory window (V)")
 panel_label(ax, "(b)")
@@ -384,14 +389,73 @@ fig.tight_layout()
 save(fig, "fig5_circuit")
 
 # ======================================================================
+print("[4b/6] Multilevel states under strain ...")
+
+MLC_PROGS = [None, 3.5, 4.3, 6.0]   # L0 (erased), L1, L2, L3
+
+
+def mlc_levels(e):
+    out = []
+    for xp in MLC_PROGS:
+        d = fefet.FeFET(eps_pct=e, n_dom=1600)
+        d.fe.reset(-1)
+        d.program(-6.0, 0.0)
+        if xp is not None:
+            d.program(xp, 0.0)
+        _, p = d.solve_bias(0.0)
+        out.append(d.drain_current(p))
+    return np.array(out)
+
+
+eps_mlc = np.linspace(-1.0, 0.0, 6)
+L = np.array([mlc_levels(e) for e in eps_mlc])   # shape (n_eps, 4)
+marg = np.diff(L, axis=1)                        # adjacent separations
+worst = marg[:, 1:].min(axis=1)                  # worst programmed margin
+R["MLC_levels_uA_eps0"] = [float(v * 1e6) for v in L[-1]]
+R["MLC_worst_margin_uA_eps0"] = float(worst[-1] * 1e6)
+R["MLC_worst_margin_uA_m1pct"] = float(worst[0] * 1e6)
+R["MLC_margin_gain_m1pct"] = float(worst[0] / worst[-1])
+
+fig, axs = plt.subplots(1, 2, figsize=(7.0, 2.35))
+ax = axs[0]
+lvl_cols = ["0.45", OI["orange"], OI["green"], OI["blue"]]
+lvl_names = ["L0 (00, erased)", "L1 (01)", "L2 (10)", "L3 (11)"]
+for i in range(4):
+    ax.plot(eps_mlc, L[:, i] * 1e6, "o-", ms=3.5, color=lvl_cols[i],
+            label=lvl_names[i])
+ax.set_xlabel("Biaxial strain (%)")
+ax.set_ylabel(r"Retained level current ($\mu$A)")
+ax.legend(frameon=True, fontsize=6.8, loc="upper right", borderpad=0.45,
+          labelspacing=0.3)
+panel_label(ax, "(a)")
+
+ax = axs[1]
+ax.plot(eps_mlc, worst * 1e6, "s-", ms=4, color=OI["red"])
+ax.set_xlabel("Biaxial strain (%)")
+ax.set_ylabel(r"Worst-case level margin ($\mu$A)", color=OI["red"])
+ax.tick_params(axis="y", colors=OI["red"])
+ax2 = ax.twinx()
+ax2.plot(eps_mlc, worst / worst[-1], "o--", ms=3.5, color=OI["purple"])
+ax2.set_ylabel("Margin gain vs unstrained", color=OI["purple"])
+ax2.tick_params(axis="y", colors=OI["purple"])
+ax2.spines["right"].set_visible(True)
+ax2.annotate(f"{worst[0]/worst[-1]:.1f}$\\times$ at $-1\\%$",
+             xy=(-1.0, worst[0] / worst[-1]),
+             xytext=(-0.72, worst[0] / worst[-1] * 0.985),
+             fontsize=7.5, color=OI["purple"])
+panel_label(ax, "(b)")
+fig.tight_layout()
+save(fig, "fig6_mlc")
+
+# ======================================================================
 print("[5/6] Concept figure ...")
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib.patches import FancyBboxPatch
 
-fig = plt.figure(figsize=(7.2, 2.9))
-gs = fig.add_gridspec(1, 3, width_ratios=[1.52, 0.92, 0.94],
-                      left=0.005, right=0.985, top=0.90, bottom=0.06,
-                      wspace=0.30)
+fig = plt.figure(figsize=(7.2, 3.0))
+gs = fig.add_gridspec(1, 4, width_ratios=[1.16, 0.72, 0.86, 0.90],
+                      left=0.005, right=0.99, top=0.89, bottom=0.05,
+                      wspace=0.26)
 
 # ------------------------- (a) 3D exploded device stack ----------------
 axA = fig.add_subplot(gs[0], projection="3d")
@@ -419,8 +483,8 @@ def box3d(ax, x0, x1, y0, y1, z0, z1, color, lw=0.45):
         ([v[0], v[1], v[2], v[3]], 0.60),   # bottom
         ([v[2], v[3], v[7], v[6]], 0.92),   # back
         ([v[0], v[3], v[7], v[4]], 0.78),   # left side
-        ([v[1], v[2], v[6], v[5]], 0.70),   # right side (x = x1)
-        ([v[0], v[1], v[5], v[4]], 0.86),   # front (y = y0)
+        ([v[1], v[2], v[6], v[5]], 0.70),   # right side
+        ([v[0], v[1], v[5], v[4]], 0.86),   # front
         ([v[4], v[5], v[6], v[7]], 1.00),   # top
     ]
     pc = Poly3DCollection([f[0] for f in faces],
@@ -431,37 +495,40 @@ def box3d(ax, x0, x1, y0, y1, z0, z1, color, lw=0.45):
     axA.add_collection3d(pc)
 
 
+# layer colors, shared with the legend
+LC = {"topgate": "#f3d8a4", "cips": "#f1b4b4", "fgate": "#f3d8a4",
+      "hbn": "#c9e9d8", "wse2": OI["sky"], "pads": "#f8c86a",
+      "al2o3": "#ddd2f2", "sio2": "#e8e8e8", "si": "#bdbdbd"}
+
 GAP = 0.50
 z = 0.0
-# name, thickness, color, (x0, x1); drawn bottom to top
 layers3d = [
-    ("p++ Si (back gate)",  0.85, "#bdbdbd", (0.0, 10.0)),
-    ("SiO$_2$",             0.42, "#e8e8e8", (0.0, 10.0)),
-    ("Al$_2$O$_3$",         0.42, "#ddd2f2", (0.0, 10.0)),
-    ("WSe$_2$ (1L)",        0.16, OI["sky"], (0.0, 10.0)),
-    ("h-BN",                0.45, "#c9e9d8", (0.0, 10.0)),
-    ("floating gate (M)",   0.32, "#f3d8a4", (0.6, 9.4)),
-    ("CIPS (FE)",           0.95, "#f1b4b4", (0.0, 10.0)),
-    ("top gate (M)",        0.32, "#f3d8a4", (0.6, 9.4)),
+    ("si",    0.85, (0.0, 10.0)),
+    ("sio2",  0.42, (0.0, 10.0)),
+    ("al2o3", 0.42, (0.0, 10.0)),
+    ("wse2",  0.16, (0.0, 10.0)),
+    ("hbn",   0.45, (0.0, 10.0)),
+    ("fgate", 0.32, (0.6, 9.4)),
+    ("cips",  0.95, (0.0, 10.0)),
+    ("topgate", 0.32, (0.6, 9.4)),
 ]
 z_centers = {}
 z_tops = {}
-for name, th, colr, (xx0, xx1) in layers3d:
-    box3d(axA, xx0, xx1, 0.0, 6.5, z, z + th, colr)
-    if name == "WSe$_2$ (1L)":
-        # S/D contact pads sit ON TOP of the channel ends (Zhao 2026 style)
+for key, th, (xx0, xx1) in layers3d:
+    box3d(axA, xx0, xx1, 0.0, 6.5, z, z + th, LC[key])
+    if key == "wse2":
         for px0, px1 in [(0.0, 1.8), (8.2, 10.0)]:
-            box3d(axA, px0, px1, 0.0, 6.5, z + th, z + th + 0.42, "#f8c86a")
-    z_centers[name] = z + th / 2.0
-    z_tops[name] = z + th
+            box3d(axA, px0, px1, 0.0, 6.5, z + th, z + th + 0.42, LC["pads"])
+    z_centers[key] = z + th / 2.0
+    z_tops[key] = z + th
     z += th + GAP
 
-axA.set_xlim(-0.5, 13.8)
+axA.set_xlim(-0.5, 11.2)
 axA.set_ylim(-0.5, 7.0)
 axA.set_zlim(-0.4, z + 0.2)
-axA.set_title("Strained p-type MFMIS FeFET", fontsize=9.5, pad=2, x=0.44)
+axA.set_title("Strained p-type MFMIS FeFET", fontsize=9, pad=2, x=0.52)
 
-# ---- transparent 2D overlay for labels, arrows, and leader lines ------
+# minimal on-figure annotations (all naming lives in the legend panel)
 from mpl_toolkits.mplot3d import proj3d
 fig.canvas.draw()
 
@@ -477,49 +544,21 @@ axOv.set_xlim(0, 1)
 axOv.set_ylim(0, 1)
 axOv.axis("off")
 axOv.set_facecolor("none")
-axOv.text(-0.055, 1.10, "(a)", transform=axOv.transAxes,
+axOv.text(-0.04, 1.10, "(a)", transform=axOv.transAxes,
           fontweight="bold", fontsize=10, va="top")
 
-label_x = 0.755
-tips, ys = [], []
-for name, _, colr, (xx0, xx1) in layers3d:
-    zc_l = z_centers[name]
-    if name == "WSe$_2$ (1L)":
-        tips.append(to_axes_frac(6.4, 0.15, zc_l + 0.04))
-    else:
-        tips.append(to_axes_frac(xx1 - 0.3, 1.1, zc_l))
-    ys.append(to_axes_frac(10.0, 6.4, zc_l)[1] + 0.02)
-# enforce a minimum vertical gap between labels (top to bottom)
-MINGAP = 0.088
-order = np.argsort(ys)[::-1]
-for rank in range(1, len(order)):
-    i_hi, i_lo = order[rank - 1], order[rank]
-    if ys[i_hi] - ys[i_lo] < MINGAP:
-        ys[i_lo] = ys[i_hi] - MINGAP
-for (name, _, colr, _x), tip, yl in zip(layers3d, tips, ys):
-    axOv.annotate(name, xy=tip, xytext=(label_x, yl),
-                  fontsize=7.6, ha="left", va="center",
-                  arrowprops=dict(arrowstyle="-", color="0.5", lw=0.6,
-                                  shrinkA=4.0, shrinkB=1.0),
-                  annotation_clip=False, clip_on=False)
-
-zc = z_centers["WSe$_2$ (1L)"]
-zt = z_tops["WSe$_2$ (1L)"]
-# S / D letters on the visible contact pad front faces (2D overlay)
+zc = z_centers["wse2"]
+zt = z_tops["wse2"]
 for xpad, lab in [(0.9, "S"), (9.15, "D")]:
     p = to_axes_frac(xpad, 0.0, zt + 0.21)
     axOv.text(p[0], p[1], lab, fontsize=8.5, ha="center", va="center",
               fontweight="bold", color="0.12")
-
-# holes in the channel (front face)
 for xh in [3.4, 5.0, 6.6]:
     p = to_axes_frac(xh, 0.0, zc)
     axOv.text(p[0], p[1], "+", fontsize=8, ha="center", va="center",
               color="white", fontweight="bold")
-
-# ferroelectric polarization arrows on the CIPS front face
-zF0 = z_centers["CIPS (FE)"] - 0.34
-zF1 = z_centers["CIPS (FE)"] + 0.34
+zF0 = z_centers["cips"] - 0.34
+zF1 = z_centers["cips"] + 0.34
 for xp in [2.2, 4.1, 6.0, 7.9]:
     a0 = to_axes_frac(xp, 0.0, zF0)
     a1 = to_axes_frac(xp, 0.0, zF1)
@@ -527,22 +566,77 @@ for xp in [2.2, 4.1, 6.0, 7.9]:
                   arrowprops=dict(arrowstyle="-|>", color="#8f2f2f",
                                   lw=1.3, shrinkA=0, shrinkB=0),
                   annotation_clip=False)
-pP = to_axes_frac(0.55, 0.0, z_centers["CIPS (FE)"])
-axOv.text(pP[0] - 0.030, pP[1] + 0.010, r"$P$", fontsize=9,
-          color="#8f2f2f", ha="right", fontstyle="italic")
-
-# biaxial compression arrows at the channel level
 pL = to_axes_frac(-0.15, 0.2, zc)
 pR = to_axes_frac(10.15, 0.2, zc)
-for tip, tail in [(pL, (pL[0] - 0.115, pL[1])), (pR, (pR[0] + 0.10, pR[1]))]:
+for tip, tail in [(pL, (pL[0] - 0.13, pL[1])), (pR, (pR[0] + 0.12, pR[1]))]:
     axOv.annotate("", xy=tip, xytext=tail,
                   arrowprops=dict(arrowstyle="-|>", color=OI["blue"],
                                   lw=2.4, shrinkA=0, shrinkB=1),
                   annotation_clip=False)
-axOv.text(0.36, 0.012, r"biaxial compression $\epsilon<0$",
-          fontsize=8, color=OI["blue"], ha="center")
+
+# ------------------------- legend panel (demo style) -------------------
+axL = fig.add_subplot(gs[1])
+axL.axis("off")
+axL.set_xlim(0, 1)
+axL.set_ylim(0, 1)
+axL.add_patch(FancyBboxPatch((0.01, 0.00), 0.98, 1.0,
+                             boxstyle="round,pad=0.012,rounding_size=0.025",
+                             facecolor="#fcfcfc", edgecolor="0.55", lw=0.8,
+                             transform=axL.transAxes, clip_on=False))
+
+rows = [
+    ("head", None, r"MFMIS stack, $V_{\rm DD}$ = 3 V:"),
+    ("sw", LC["topgate"], "top gate (M)"),
+    ("sw", LC["cips"],    "CIPS (FE), 30 nm"),
+    ("sw", LC["fgate"],   "floating gate (M)"),
+    ("sw", LC["hbn"],     "h-BN, 10 nm"),
+    ("sw", LC["wse2"],    r"WSe$_2$ (1L, strained)"),
+    ("sw", LC["pads"],    "S/D contacts (Au)"),
+    ("sw", LC["al2o3"],   r"Al$_2$O$_3$"),
+    ("sw", LC["sio2"],    r"SiO$_2$"),
+    ("sw", LC["si"],      "p++ Si back gate"),
+    ("txt", None, r"$W$ = 4 $\mu$m,  $L$ = 2 $\mu$m"),
+    ("gap", None, None),
+    ("arr", OI["blue"],  r"compression $\epsilon<0$"),
+    ("uparr", "#8f2f2f", r"CIPS polarization $P$"),
+    ("plus", "#083d66",  "channel holes"),
+]
+y = 0.955
+DY = 0.0635
+for kind, colr, label in rows:
+    if kind == "gap":
+        y -= 0.35 * DY
+        continue
+    if kind == "head":
+        axL.text(0.07, y, label, fontsize=7.2, va="center")
+    elif kind == "sw":
+        axL.add_patch(Rectangle((0.07, y - 0.021), 0.13, 0.042,
+                                facecolor=colr, edgecolor="0.3", lw=0.5,
+                                transform=axL.transAxes))
+        axL.text(0.25, y, label, fontsize=6.9, va="center")
+    elif kind == "txt":
+        axL.text(0.07, y, label, fontsize=6.9, va="center")
+    elif kind == "arr":
+        axL.annotate("", xy=(0.20, y), xytext=(0.06, y),
+                     xycoords="axes fraction",
+                     arrowprops=dict(arrowstyle="-|>", color=colr, lw=2.0))
+        axL.text(0.25, y, label, fontsize=6.9, va="center")
+    elif kind == "uparr":
+        axL.annotate("", xy=(0.13, y + 0.022), xytext=(0.13, y - 0.022),
+                     xycoords="axes fraction",
+                     arrowprops=dict(arrowstyle="-|>", color=colr, lw=1.5))
+        axL.text(0.25, y, label, fontsize=6.9, va="center")
+    elif kind == "plus":
+        axL.add_patch(Rectangle((0.085, y - 0.021), 0.09, 0.042,
+                                facecolor=OI["sky"], edgecolor="0.3",
+                                lw=0.5, transform=axL.transAxes))
+        axL.text(0.13, y, "+", fontsize=7.5, ha="center", va="center",
+                 color="white", fontweight="bold")
+        axL.text(0.25, y, label, fontsize=6.9, va="center")
+    y -= DY
+
 # ------------------------- (b) valley schematic ------------------------
-ax = fig.add_subplot(gs[1])
+ax = fig.add_subplot(gs[2])
 kk = np.linspace(-1, 1, 200)
 E_K = -2.2 * (kk - 0.55) ** 2
 E_G = -0.157 - 1.0 * (kk + 0.45) ** 2
@@ -565,7 +659,7 @@ ax.spines["left"].set_visible(True)
 panel_label(ax, "(b)", dx=-0.06)
 
 # ------------------------- (c) workflow chart --------------------------
-ax = fig.add_subplot(gs[2])
+ax = fig.add_subplot(gs[3])
 ax.axis("off")
 ax.set_xlim(0, 10)
 ax.set_ylim(0, 10)
@@ -587,7 +681,7 @@ for i, (s_, colr) in enumerate(zip(steps, cols)):
     if i < 3:
         ax.annotate("", xy=(5.0, y0 - GAPC + 0.10), xytext=(5.0, y0 - 0.10),
                     arrowprops=dict(arrowstyle="-|>", color="0.25", lw=1.1))
-ax.set_title("Multiscale simulation chain", fontsize=8.5, pad=2)
+ax.set_title("Multiscale simulation chain", fontsize=9, pad=2)
 panel_label(ax, "(c)", dx=-0.02)
 save(fig, "fig1_concept")
 
