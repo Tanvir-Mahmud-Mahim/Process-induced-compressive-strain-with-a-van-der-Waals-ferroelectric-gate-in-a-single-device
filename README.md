@@ -1,8 +1,8 @@
 # Strain-Augmented CIPS/WSe2 p-Type FeFET: Simulation Code Base
 
 Code accompanying the article "Combining Strain and Ferroelectricity in
-WSe2 Transistors for Fast, Low-Power Nonvolatile Logic: A Multiscale
-Simulation Study".
+WSe2 Transistors for Fast, Low-Power Nonvolatile Logic and Multilevel
+Memory: A Multiscale Simulation Study".
 
 Repository:
 https://github.com/Tanvir-Mahmud-Mahim/Process-induced-compressive-strain-with-a-van-der-Waals-ferroelectric-gate-in-a-single-device
