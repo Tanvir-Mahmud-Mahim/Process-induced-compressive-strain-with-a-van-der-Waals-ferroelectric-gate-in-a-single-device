@@ -54,37 +54,86 @@ def psi_of_p(p, eps_pct):
     return phi_F(eps_pct) + P.kT_eV * arg
 
 
+def p_of_psi(psi, eps_pct):
+    """Inverse of psi_of_p: hole sheet density (m^-2) at surface
+    potential psi (V)."""
+    NK = NK_dos()
+    arg = (psi - phi_F(eps_pct)) / P.kT_eV
+    return NK * P.kT * np.log1p(np.exp(np.clip(arg, -60, 60)))
+
+
+T_CH = 0.65e-9  # monolayer WSe2 thickness (m), for 2D -> 3D densities
+
+
 class FeFET:
     def __init__(self, t_FE=None, t_hBN=None, eps_pct=0.0, n_dom=400,
-                 Dit_cm2=0.0):
-        """Dit_cm2: interface trap density at the WSe2/h-BN interface in
-        cm^-2 eV^-1, treated as slow (worst-case) traps: they capture
-        holes as the surface potential rises but do not re-emit within a
-        sweep, producing the volatile clockwise hysteresis component that
-        opposes the ferroelectric window. Dit_cm2 = 0 reproduces the
-        trap-free device bit-for-bit."""
+                 Dit_cm2=0.0, trap_mode="worst", sigma_p_cm2=1e-15,
+                 n_trap_bins=24):
+        """Interface traps at the WSe2/h-BN interface: uniform density
+        Dit_cm2 (cm^-2 eV^-1) over a 0.6 eV band of gap states.
+
+        trap_mode = "worst": bounding quasi-static model (instantaneous
+        capture while the surface potential rises, no re-emission while
+        the channel conducts, complete emission at full depletion).
+
+        trap_mode = "dynamic": finite-rate Shockley-Read-Hall kinetics
+        with energy-resolved occupancies. Capture rate c = sigma v_th
+        p3d; emission follows detailed balance, e_i = sigma v_th
+        p3d(psi_t,i), i.e. the free density that would coexist with the
+        Fermi level at the trap level, so no extra parameter beyond the
+        capture cross section sigma_p is introduced. Pass dwell times dt
+        to solve_bias/sweep/program/hold to evolve the occupancies.
+
+        Dit_cm2 = 0 reproduces the trap-free device bit-for-bit."""
         self.t_FE = P.t_FE_default if t_FE is None else t_FE
         self.t_hBN = P.t_hBN if t_hBN is None else t_hBN
         self.C_hBN = P.eps0 * P.eps_hBN / self.t_hBN
         self.eps = eps_pct
         self.fe = PreisachFE(n_dom=n_dom)
         self.mu = M.hole_mobility(eps_pct)  # m^2/Vs
-        # --- interface trap model (slow, worst case) ---
+        # --- interface trap band ---
         self.Dit = Dit_cm2 * 1e4          # states / (m^2 eV)
         self.trap_band = 0.60             # eV of gap states that can charge
-        # traps start filling once psi_s enters the subthreshold band
         self.trap_lo = phi_F(eps_pct) - 0.45
-        self.psi_hist = -1e9              # highest psi_s seen so far
+        self.trap_mode = trap_mode
+        self.psi_hist = -1e9              # worst mode: highest psi_s seen
+        # dynamic mode: SRH kinetics
+        self.sigma_p = sigma_p_cm2 * 1e-4          # m^2
+        m_eff = P.mK_h * P.m0
+        self.v_th = np.sqrt(3.0 * P.kT / m_eff)    # m/s
+        self.n_bins = n_trap_bins
+        edges = np.linspace(self.trap_lo, self.trap_lo + self.trap_band,
+                            n_trap_bins + 1)
+        self.trap_lev = 0.5 * (edges[:-1] + edges[1:])  # bin centers (V)
+        self.trap_f = np.zeros(n_trap_bins)             # hole occupancy
+        # detailed-balance emission rates per bin (1/s), fixed by levels
+        self._e_rate = self.sigma_p * self.v_th * \
+            p_of_psi(self.trap_lev, eps_pct) / T_CH
 
     def Q_slow(self):
-        """Frozen (captured) trap charge per area (C/m^2)."""
+        """Trapped hole charge per area (C/m^2)."""
         if self.Dit <= 0.0:
             return 0.0
+        if self.trap_mode == "dynamic":
+            dN = self.Dit * self.trap_band / self.n_bins  # states/m^2/bin
+            return P.q * dN * float(np.sum(self.trap_f))
         dE = min(max(self.psi_hist - self.trap_lo, 0.0), self.trap_band)
         return P.q * self.Dit * dE
 
     def reset_traps(self):
         self.psi_hist = -1e9
+        self.trap_f[:] = 0.0
+
+    def advance_traps(self, p, dt):
+        """Evolve dynamic trap occupancies over dwell time dt (s) with
+        the channel at hole density p (m^-2)."""
+        if self.Dit <= 0.0 or self.trap_mode != "dynamic" or dt <= 0.0:
+            return
+        p3d = max(p, 0.0) / T_CH
+        c = self.sigma_p * self.v_th * p3d          # capture rate (1/s)
+        rate = c + self._e_rate
+        f_eq = np.where(rate > 0, c / np.maximum(rate, 1e-300), 0.0)
+        self.trap_f = f_eq + (self.trap_f - f_eq) * np.exp(-rate * dt)
 
     # ------------------------------------------------------------------
     def _solve_field(self, x):
@@ -108,9 +157,10 @@ class FeFET:
         p = (D - Qs) / P.q
         return E, max(p, 0.0)
 
-    def solve_bias(self, x, max_flips=4000, batch=4):
+    def solve_bias(self, x, max_flips=4000, batch=4, dt=None):
         """Self-consistent bias point: alternate field solution and
-        self-limited hysteron flipping (lowest-coercive-field first)."""
+        self-limited hysteron flipping (lowest-coercive-field first).
+        In dynamic trap mode, dt is the dwell time at this bias."""
         E, p = self._solve_field(x)
         flips = 0
         while flips < max_flips:
@@ -126,21 +176,34 @@ class FeFET:
                 self.fe.state[order] = -1.0
             flips += batch
             E, p = self._solve_field(x)
-        # slow-trap dynamics (quasi-static worst case for the window):
-        # capture whenever the surface potential exceeds the highest value
-        # seen so far; complete emission once the channel is fully
-        # depleted (trap levels lifted above the Fermi level at the erase
-        # extreme). No emission while the channel conducts.
         if self.Dit > 0.0:
-            if p > 0.0:
-                psi = psi_of_p(p, self.eps)
-                if psi > self.psi_hist:
-                    self.psi_hist = psi
-                    # captured charge screens the gate; re-solve once
+            if self.trap_mode == "dynamic":
+                if dt is not None and dt > 0.0:
+                    self.advance_traps(p, dt)
                     E, p = self._solve_field(x)
             else:
-                self.psi_hist = -1e9
+                # worst-case bound: instantaneous capture while the
+                # surface potential rises, no re-emission while the
+                # channel conducts, complete emission at full depletion
+                if p > 0.0:
+                    psi = psi_of_p(p, self.eps)
+                    if psi > self.psi_hist:
+                        self.psi_hist = psi
+                        E, p = self._solve_field(x)
+                else:
+                    self.psi_hist = -1e9
         return E, p
+
+    def hold(self, t_hold, x_hold=0.0, n_sub=30):
+        """Evolve the device at fixed drive x_hold for t_hold seconds
+        (dynamic trap mode); returns (times, hole densities)."""
+        ts = np.logspace(-8, np.log10(max(t_hold, 1e-7)), n_sub)
+        dts = np.diff(np.concatenate([[0.0], ts]))
+        out_p = []
+        for dt in dts:
+            _, p = self.solve_bias(x_hold, dt=dt)
+            out_p.append(p)
+        return ts, np.array(out_p)
 
     # ------------------------------------------------------------------
     def drain_current(self, p, VDS=None):
@@ -153,30 +216,34 @@ class FeFET:
         I = VDS / (1.0 / G_ch + R_c)
         return max(I, 1e-13)
 
-    def program(self, x_prog, x_hold=0.0):
-        """Apply a program drive and return to hold, tracking states."""
+    def program(self, x_prog, x_hold=0.0, t_pulse=None):
+        """Apply a program drive and return to hold, tracking states.
+        In dynamic trap mode, t_pulse is the total pulse duration (s)."""
+        dt = None if t_pulse is None else t_pulse / 80.0
         for x in np.linspace(x_hold, x_prog, 40):
-            self.solve_bias(x)
+            self.solve_bias(x, dt=dt)
         for x in np.linspace(x_prog, x_hold, 40):
-            self.solve_bias(x)
-        return self.solve_bias(x_hold)
+            self.solve_bias(x, dt=dt)
+        return self.solve_bias(x_hold, dt=dt)
 
-    def sweep(self, x_max=6.0, n=401):
-        """Double sweep x: -x_max -> +x_max -> -x_max."""
+    def sweep(self, x_max=6.0, n=401, t_total=None):
+        """Double sweep x: -x_max -> +x_max -> -x_max. In dynamic trap
+        mode, t_total is the duration of the full double sweep (s)."""
         self.fe.reset(-1)
         self.reset_traps()
+        dt = None if t_total is None else t_total / (2 * n + 50)
         for x in np.linspace(0.0, -x_max, 50):
-            self.solve_bias(x)
+            self.solve_bias(x, dt=dt)
         xs_f = np.linspace(-x_max, x_max, n)
         xs_b = xs_f[::-1]
         I_f, p_f = [], []
         for x in xs_f:
-            _, p = self.solve_bias(x)
+            _, p = self.solve_bias(x, dt=dt)
             p_f.append(p)
             I_f.append(self.drain_current(p))
         I_b, p_b = [], []
         for x in xs_b:
-            _, p = self.solve_bias(x)
+            _, p = self.solve_bias(x, dt=dt)
             p_b.append(p)
             I_b.append(self.drain_current(p))
         return (xs_f, np.array(I_f), xs_b, np.array(I_b),

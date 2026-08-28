@@ -993,6 +993,116 @@ panel_label(ax, "(b)", dx=-0.17)
 fig.tight_layout()
 save(fig, "figS6_traps")
 
+# --- (i-b) Finite-rate SRH trap dynamics (beyond the worst case) -----
+print("  [8b] dynamic SRH trap kinetics ...")
+
+# Memory window versus double-sweep duration at Dit = 1e12 (sigma = 1e-15 cm^2)
+tsweep_grid = [1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0]
+mw_dyn = []
+for tt in tsweep_grid:
+    dd = fefet.FeFET(eps_pct=0.0, Dit_cm2=1e12, trap_mode="dynamic")
+    ss = dd.sweep(x_max=6.0, n=301, t_total=tt)
+    mwd, _, _ = fefet.memory_window(*ss[:4])
+    mw_dyn.append(mwd)
+R["tsweep_grid_s"] = tsweep_grid
+R["MW_dyn_vs_tsweep_Dit1e12"] = [float(v) for v in mw_dyn]
+
+# capture-cross-section sensitivity at a 1 s sweep
+mw_sig = {}
+for sig in [1e-16, 1e-15, 1e-14]:
+    dd = fefet.FeFET(eps_pct=0.0, Dit_cm2=1e12, trap_mode="dynamic",
+                     sigma_p_cm2=sig)
+    ss = dd.sweep(x_max=6.0, n=301, t_total=1.0)
+    mwd, _, _ = fefet.memory_window(*ss[:4])
+    mw_sig[sig] = float(mwd)
+R["MW_dyn_sigma_sens_Dit1e12_1s"] = {f"{k:.0e}": v for k, v in mw_sig.items()}
+
+# retention transients after a 100 us program pulse
+ret_dyn = {}
+for Dit in [3e11, 1e12, 3e12]:
+    dd = fefet.FeFET(eps_pct=0.0, n_dom=1600, Dit_cm2=Dit,
+                     trap_mode="dynamic")
+    dd.fe.reset(-1)
+    dd.reset_traps()
+    dd.program(-6.0, 0.0, t_pulse=1e-4)
+    Ioff_d = dd.drain_current(dd.solve_bias(0.0, dt=1e-3)[1])
+    dd.fe.reset(-1)
+    dd.reset_traps()
+    dd.program(-6.0, 0.0, t_pulse=1e-4)
+    dd.program(+6.0, 0.0, t_pulse=1e-4)
+    ts_r, ps_r = dd.hold(1e3, 0.0, n_sub=25)
+    # trap-charge-corrected mobility at sampled points
+    idx_s = [0, 6, 10, 14, 18, 24]
+    I_r = []
+    for i in idx_s:
+        N_t = dd.Q_slow() / P.q  # end-state charge (upper bound on scatterers)
+        P.n_imp = n_imp_base + N_t
+        dd.mu = M.hole_mobility(0.0)
+        P.n_imp = n_imp_base
+        I_r.append(dd.drain_current(ps_r[i]))
+    dd.mu = M.hole_mobility(0.0)
+    ret_dyn[Dit] = {"t_s": [float(ts_r[i]) for i in idx_s],
+                    "I_uA": [float(v * 1e6) for v in I_r],
+                    "Ioff_uA": float(Ioff_d * 1e6)}
+R["retention_dyn"] = {f"{k:.0e}": v for k, v in ret_dyn.items()}
+R["Ion_uA_dyn_eq_Dit1e12"] = ret_dyn[1e12]["I_uA"][-1]
+R["Ion_uA_dyn_eq_Dit3e12"] = ret_dyn[3e12]["I_uA"][-1]
+R["onoff_dyn_Dit3e12"] = float(ret_dyn[3e12]["I_uA"][-1] /
+                              max(ret_dyn[3e12]["Ioff_uA"], 1e-7))
+
+# strain gain with dynamic traps at Dit = 1e12
+dd = fefet.FeFET(eps_pct=-1.0, n_dom=1600, Dit_cm2=1e12,
+                 trap_mode="dynamic")
+dd.fe.reset(-1)
+dd.reset_traps()
+dd.program(-6.0, 0.0, t_pulse=1e-4)
+dd.program(+6.0, 0.0, t_pulse=1e-4)
+_, p_eq = dd.hold(1e3, 0.0, n_sub=25)
+N_t = dd.Q_slow() / P.q
+P.n_imp = n_imp_base + N_t
+dd.mu = M.hole_mobility(-1.0)
+P.n_imp = n_imp_base
+I_m1_dyn = dd.drain_current(p_eq[-1])
+R["Ion_gain_dyn_Dit1e12_m1pct"] = float(I_m1_dyn * 1e6 /
+                                        R["Ion_uA_dyn_eq_Dit1e12"])
+print(f"    MW(dyn) flat: {min(mw_dyn):.3f}-{max(mw_dyn):.3f} V over "
+      f"{tsweep_grid[0]:.0e}-{tsweep_grid[-1]:.0e} s sweeps; "
+      f"I_ret(1e12)={R['Ion_uA_dyn_eq_Dit1e12']:.2f} uA, "
+      f"I_ret(3e12)={R['Ion_uA_dyn_eq_Dit3e12']:.2f} uA, "
+      f"gain(-1%)={R['Ion_gain_dyn_Dit1e12_m1pct']:.2f}")
+
+# --- figS7: dynamic trap kinetics ------------------------------------
+fig, axs = plt.subplots(1, 2, figsize=(7.0, 2.5))
+ax = axs[0]
+ax.semilogx(tsweep_grid, mw_dyn, "o-", color=OI["blue"], ms=4,
+            label="dynamic SRH")
+ax.axhline(R["MW_V_eps0"], color=OI["black"], ls=":", lw=1.0)
+ax.axhline(T0[i12, 0], color=OI["red"], ls="--", lw=1.0)
+ax.text(2e-4, R["MW_V_eps0"] - 0.10, "trap-free", fontsize=6.5,
+        color=OI["black"])
+ax.text(2e-4, T0[i12, 0] + 0.05, "worst-case bound", fontsize=6.5,
+        color=OI["red"])
+ax.set_xlabel("Double-sweep duration (s)")
+ax.set_ylabel("Memory window (V)")
+ax.set_ylim(1.0, 1.55)
+ax.legend(frameon=True, loc="lower right", fontsize=6.5, borderpad=0.4)
+panel_label(ax, "(a)", dx=-0.17)
+ax = axs[1]
+cols = {3e11: OI["green"], 1e12: OI["orange"], 3e12: OI["red"]}
+for Dit, row in ret_dyn.items():
+    ax.semilogx(row["t_s"], row["I_uA"], "o-", color=cols[Dit], ms=3.5,
+                label=rf"$D_{{\rm it}}$ = {Dit:.0e}")
+ax.axhline(R["Ion_uA_eps0"], color="0.55", ls=":", lw=0.9)
+ax.text(2e-8, R["Ion_uA_eps0"] + 0.15, "trap-free retained current",
+        fontsize=6.5, color="0.4")
+ax.set_xlabel("Hold time after programming (s)")
+ax.set_ylabel(r"Retained $I_{\rm on}$ ($\mu$A)")
+ax.set_ylim(0, 6.4)
+ax.legend(frameon=True, loc="center right", fontsize=6.5, borderpad=0.4)
+panel_label(ax, "(b)", dx=-0.17)
+fig.tight_layout()
+save(fig, "figS7_trapdyn")
+
 # --- (ii) Short-channel validity: scale length -----------------------
 # lambda = sqrt((eps_ch_par / eps_hBN_perp) * t_ch * t_hBN)
 eps_ch_par = 15.3       # monolayer WSe2, in-plane static (Laturia 2018)

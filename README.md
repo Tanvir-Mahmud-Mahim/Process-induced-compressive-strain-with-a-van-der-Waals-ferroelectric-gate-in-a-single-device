@@ -21,7 +21,7 @@ Python 3.10+ with numpy, scipy, matplotlib:
     python3 run_all.py
 
 This regenerates all main-text figures (fig1 to fig6), all supplementary
-figures (figS1 to figS6) in ../figures/, and results.json with the headline
+figures (figS1 to figS7) in ../figures/, and results.json with the headline
 numbers quoted in the article. Runtime is a few minutes on a laptop (the robustness study dominates). All random
 seeds are fixed, so results are bit-for-bit reproducible.
 
