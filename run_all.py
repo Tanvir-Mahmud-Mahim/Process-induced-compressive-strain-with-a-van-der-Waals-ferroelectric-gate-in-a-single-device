@@ -1008,6 +1008,12 @@ R["tsweep_grid_s"] = tsweep_grid
 R["MW_dyn_vs_tsweep_Dit1e12"] = [float(v) for v in mw_dyn]
 
 # capture-cross-section sensitivity at a 1 s sweep
+# kinetic window at the higher trap density (1 s sweep)
+dd = fefet.FeFET(eps_pct=0.0, Dit_cm2=3e12, trap_mode="dynamic")
+ss = dd.sweep(x_max=6.0, n=301, t_total=1.0)
+mw3, _, _ = fefet.memory_window(*ss[:4])
+R["MW_dyn_Dit3e12_1s"] = float(mw3)
+
 mw_sig = {}
 for sig in [1e-16, 1e-15, 1e-14]:
     dd = fefet.FeFET(eps_pct=0.0, Dit_cm2=1e12, trap_mode="dynamic",
