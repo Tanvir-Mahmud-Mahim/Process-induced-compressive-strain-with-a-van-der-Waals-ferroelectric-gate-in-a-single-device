@@ -907,6 +907,122 @@ for xarr in [x_arr1, x_arr2]:
 save(fig, "fig0_abstract")
 
 # ======================================================================
+print("[8/8] Robustness study: interface traps, scaling, demonstrated strain ...")
+
+# --- (i) Interface traps: worst-case slow-trap model (fefet.py) --------
+Dit_grid = np.array([1e10, 3e10, 1e11, 3e11, 1e12, 3e12, 1e13])  # cm^-2 eV^-1
+n_imp_base = P.n_imp
+
+
+def trap_metrics(Dit, e):
+    """Memory window and retained reads at trap density Dit, strain e.
+    Trapped charge also acts as extra Coulomb scatterers: the retention
+    read uses a mobility computed with n_imp + N_trapped."""
+    d = fefet.FeFET(eps_pct=e, Dit_cm2=Dit)
+    s = d.sweep(x_max=6.0, n=301)
+    mw, vtf, vtb = fefet.memory_window(*s[:4])
+
+    d2 = fefet.FeFET(eps_pct=e, n_dom=1600, Dit_cm2=Dit)
+    d2.fe.reset(-1)
+    d2.reset_traps()
+    _, p_off = d2.program(-6.0, 0.0)
+    I_off = d2.drain_current(p_off)
+    _, p_on = d2.program(+6.0, 0.0)
+    # extra Coulomb centers from the charge captured during programming
+    N_t = d2.Q_slow() / P.q            # m^-2
+    P.n_imp = n_imp_base + N_t
+    d2.mu = M.hole_mobility(e)
+    P.n_imp = n_imp_base
+    I_on = d2.drain_current(p_on)
+    return mw, vtf, vtb, I_on, I_off
+
+
+trap_rows = {0.0: [], -1.0: []}
+for e in [0.0, -1.0]:
+    for Dit in Dit_grid:
+        trap_rows[e].append(trap_metrics(Dit, e))
+        r = trap_rows[e][-1]
+        print(f"  eps={e:+.0f}%  Dit={Dit:8.0e}  MW={r[0]:5.2f} V  "
+              f"I_on={r[3]*1e6:6.2f} uA  on/off={r[3]/max(r[4],1e-13):.1e}")
+
+T0 = np.array([[row[0], row[3], row[4]] for row in trap_rows[0.0]])
+T1 = np.array([[row[0], row[3], row[4]] for row in trap_rows[-1.0]])
+R["Dit_grid_cm2eV"] = [float(v) for v in Dit_grid]
+R["MW_vs_Dit_eps0"] = [float(v) for v in T0[:, 0]]
+R["Ion_uA_vs_Dit_eps0"] = [float(v * 1e6) for v in T0[:, 1]]
+R["Ion_uA_vs_Dit_m1pct"] = [float(v * 1e6) for v in T1[:, 1]]
+R["Ion_gain_vs_Dit"] = [float(a / b) if b > 1e-9 else float("nan")
+                        for a, b in zip(T1[:, 1], T0[:, 1])]
+R["onoff_vs_Dit_eps0"] = [float(a / max(b, 1e-13)) for a, b in
+                          zip(T0[:, 1], T0[:, 2])]
+i12 = int(np.argmin(np.abs(Dit_grid - 1e12)))
+R["MW_change_pct_at_Dit1e12"] = float((T0[i12, 0] / R["MW_V_eps0"] - 1) * 100)
+R["Ion_loss_pct_at_Dit1e12"] = float((1 - T0[i12, 1] * 1e6 / R["Ion_uA_eps0"]) * 100)
+R["Ion_gain_at_Dit1e12_m1pct"] = float(T1[i12, 1] / T0[i12, 1])
+
+# --- figS6: trap robustness ------------------------------------------
+fig, axs = plt.subplots(1, 2, figsize=(7.0, 2.5))
+ax = axs[0]
+ax.semilogx(Dit_grid, T0[:, 0], "o-", color=OI["blue"], ms=4)
+ax.axhline(R["MW_V_eps0"], color="0.6", ls=":", lw=0.9)
+ax.axvspan(5e9, 1e11, color=OI["green"], alpha=0.12)
+ax.axvspan(5e11, 1e12, color=OI["orange"], alpha=0.12)
+ax.axvspan(5e12, 1e13, color=OI["red"], alpha=0.10)
+ax.text(2.2e10, 0.24, "h-BN\nclass", ha="center", fontsize=6.5,
+        color=OI["green"])
+ax.text(7e11, 0.24, "typical\noxides", ha="center", fontsize=6.5,
+        color=OI["orange"])
+ax.text(7e12, 0.24, "CVD on\nSiO$_2$", ha="center", fontsize=6.5,
+        color=OI["red"])
+ax.set_xlabel(r"$D_{\rm it}$ (cm$^{-2}$ eV$^{-1}$)")
+ax.set_ylabel("Memory window (V)")
+ax.set_ylim(0, 1.55)
+panel_label(ax, "(a)", dx=-0.17)
+ax = axs[1]
+ax.loglog(Dit_grid, np.maximum(T0[:, 1] * 1e6, 1e-7), "o-",
+          color=OI["black"], ms=4, label=r"$\epsilon$ = 0")
+ax.loglog(Dit_grid, np.maximum(T1[:, 1] * 1e6, 1e-7), "s-",
+          color=OI["red"], ms=4, label=r"$\epsilon$ = $-1\%$")
+ax.axhline(0.1, color="0.6", ls=":", lw=0.9)
+ax.text(1.3e10, 0.13, "sense floor 0.1 $\mu$A", fontsize=6.5, color="0.4")
+ax.set_xlabel(r"$D_{\rm it}$ (cm$^{-2}$ eV$^{-1}$)")
+ax.set_ylabel(r"Retained $I_{\rm on}$ ($\mu$A)")
+ax.set_ylim(1e-7, 40)
+ax.legend(frameon=True, loc="lower left", fontsize=6.5, borderpad=0.4)
+panel_label(ax, "(b)", dx=-0.17)
+fig.tight_layout()
+save(fig, "figS6_traps")
+
+# --- (ii) Short-channel validity: scale length -----------------------
+# lambda = sqrt((eps_ch_par / eps_hBN_perp) * t_ch * t_hBN)
+eps_ch_par = 15.3       # monolayer WSe2, in-plane static (Laturia 2018)
+eps_hBN_perp = 3.76     # bulk h-BN, out-of-plane static (Laturia 2018)
+t_ch = 0.65e-9          # monolayer WSe2 thickness
+lam = np.sqrt((eps_ch_par / eps_hBN_perp) * t_ch * P.t_hBN)
+R["scale_length_nm"] = float(lam * 1e9)
+R["L_longchannel_min_nm"] = float(10.0 * lam * 1e9)
+print(f"  scale length lambda = {lam*1e9:.1f} nm; "
+      f"long-channel limit ~ {10*lam*1e9:.0f} nm; L = {P.L_ch*1e6:.0f} um")
+
+# --- (iii) Gains at demonstrated strain levels ------------------------
+for e_tag, e in [("m022", -0.22), ("m05", -0.5)]:
+    mu_gain = M.hole_mobility(e) / M.hole_mobility(0.0)
+    Ion_e, _, _, _ = retained_reads(e)
+    inv = C.NVInverter(eps_pct=e)
+    tp_e, _ = inv.delay_energy()
+    lv = mlc_levels(e)
+    worst_e = np.diff(lv)[1:].min()
+    R[f"mu_gain_{e_tag}"] = float(mu_gain)
+    R[f"Ion_gain_{e_tag}"] = float(Ion_e / (R["Ion_uA_eps0"] * 1e-6))
+    R[f"tpLH_ps_{e_tag}"] = float(tp_e * 1e12)
+    R[f"EDP_gain_{e_tag}"] = float(R["tpLH_ps_eps0"] / (tp_e * 1e12))
+    R[f"MLC_margin_gain_{e_tag}"] = float(worst_e * 1e6 /
+                                          R["MLC_worst_margin_uA_eps0"])
+    print(f"  eps={e:+.2f}%: mu x{mu_gain:.2f}  Ion x{R[f'Ion_gain_{e_tag}']:.2f}  "
+          f"tpLH={tp_e*1e12:.1f} ps (EDP x{R[f'EDP_gain_{e_tag}']:.2f})  "
+          f"MLC margin x{R[f'MLC_margin_gain_{e_tag}']:.2f}")
+
+# ======================================================================
 with open(os.path.join(os.path.dirname(__file__), "results.json"), "w") as f:
     json.dump(R, f, indent=2)
 print(json.dumps(R, indent=2))

@@ -55,33 +55,58 @@ def psi_of_p(p, eps_pct):
 
 
 class FeFET:
-    def __init__(self, t_FE=None, t_hBN=None, eps_pct=0.0, n_dom=400):
+    def __init__(self, t_FE=None, t_hBN=None, eps_pct=0.0, n_dom=400,
+                 Dit_cm2=0.0):
+        """Dit_cm2: interface trap density at the WSe2/h-BN interface in
+        cm^-2 eV^-1, treated as slow (worst-case) traps: they capture
+        holes as the surface potential rises but do not re-emit within a
+        sweep, producing the volatile clockwise hysteresis component that
+        opposes the ferroelectric window. Dit_cm2 = 0 reproduces the
+        trap-free device bit-for-bit."""
         self.t_FE = P.t_FE_default if t_FE is None else t_FE
         self.t_hBN = P.t_hBN if t_hBN is None else t_hBN
         self.C_hBN = P.eps0 * P.eps_hBN / self.t_hBN
         self.eps = eps_pct
         self.fe = PreisachFE(n_dom=n_dom)
         self.mu = M.hole_mobility(eps_pct)  # m^2/Vs
+        # --- interface trap model (slow, worst case) ---
+        self.Dit = Dit_cm2 * 1e4          # states / (m^2 eV)
+        self.trap_band = 0.60             # eV of gap states that can charge
+        # traps start filling once psi_s enters the subthreshold band
+        self.trap_lo = phi_F(eps_pct) - 0.45
+        self.psi_hist = -1e9              # highest psi_s seen so far
+
+    def Q_slow(self):
+        """Frozen (captured) trap charge per area (C/m^2)."""
+        if self.Dit <= 0.0:
+            return 0.0
+        dE = min(max(self.psi_hist - self.trap_lo, 0.0), self.trap_band)
+        return P.q * self.Dit * dE
+
+    def reset_traps(self):
+        self.psi_hist = -1e9
 
     # ------------------------------------------------------------------
     def _solve_field(self, x):
         """Field E_FE for drive x with the hysteron state frozen."""
         Psw = self.fe.P_switch()
-        E0 = -Psw / (P.eps0 * P.eps_FE_b)  # D = 0 (fully depleted channel)
+        Qs = self.Q_slow()
+        E0 = -(Psw - Qs) / (P.eps0 * P.eps_FE_b)  # D = Qs (p = 0)
 
         def f(E_):
-            D = P.eps0 * P.eps_FE_b * (E_ - E0)
-            p = D / P.q
+            D = P.eps0 * P.eps_FE_b * E_ + Psw   # displacement in the stack
+            p = (D - Qs) / P.q
             return self.t_FE * E_ + D / self.C_hBN + psi_of_p(p, self.eps) - x
 
         lo = E0 + 1e-4
         hi = 5e8
         if f(lo) >= 0.0:
-            # depletion branch: no hole charge, D = 0
+            # depletion branch: no free hole charge, D = Q_slow
             return E0, 0.0
         E = brentq(f, lo, hi, xtol=0.5)
-        D = P.eps0 * P.eps_FE_b * (E - E0)
-        return E, D / P.q
+        D = P.eps0 * P.eps_FE_b * E + Psw
+        p = (D - Qs) / P.q
+        return E, max(p, 0.0)
 
     def solve_bias(self, x, max_flips=4000, batch=4):
         """Self-consistent bias point: alternate field solution and
@@ -101,6 +126,20 @@ class FeFET:
                 self.fe.state[order] = -1.0
             flips += batch
             E, p = self._solve_field(x)
+        # slow-trap dynamics (quasi-static worst case for the window):
+        # capture whenever the surface potential exceeds the highest value
+        # seen so far; complete emission once the channel is fully
+        # depleted (trap levels lifted above the Fermi level at the erase
+        # extreme). No emission while the channel conducts.
+        if self.Dit > 0.0:
+            if p > 0.0:
+                psi = psi_of_p(p, self.eps)
+                if psi > self.psi_hist:
+                    self.psi_hist = psi
+                    # captured charge screens the gate; re-solve once
+                    E, p = self._solve_field(x)
+            else:
+                self.psi_hist = -1e9
         return E, p
 
     # ------------------------------------------------------------------
@@ -125,6 +164,7 @@ class FeFET:
     def sweep(self, x_max=6.0, n=401):
         """Double sweep x: -x_max -> +x_max -> -x_max."""
         self.fe.reset(-1)
+        self.reset_traps()
         for x in np.linspace(0.0, -x_max, 50):
             self.solve_bias(x)
         xs_f = np.linspace(-x_max, x_max, n)

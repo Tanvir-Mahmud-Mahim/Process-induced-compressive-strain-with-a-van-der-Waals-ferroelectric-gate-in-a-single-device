@@ -8,7 +8,7 @@ Repository:
 https://github.com/Tanvir-Mahmud-Mahim/Process-induced-compressive-strain-with-a-van-der-Waals-ferroelectric-gate-in-a-single-device
 
 Archived release (code, benchmarks, and figure data):
-https://doi.org/10.5281/zenodo.22084360
+https://doi.org/10.5281/zenodo.22084359
 
 ## Requirements
 
@@ -20,9 +20,9 @@ Python 3.10+ with numpy, scipy, matplotlib:
 
     python3 run_all.py
 
-This regenerates all main-text figures (fig1 to fig5), all supplementary
-figures (figS1 to figS5) in ../figures/, and results.json with the headline
-numbers quoted in the article. Runtime is about 30 s on a laptop. All random
+This regenerates all main-text figures (fig1 to fig6), all supplementary
+figures (figS1 to figS6) in ../figures/, and results.json with the headline
+numbers quoted in the article. Runtime is a few minutes on a laptop (the robustness study dominates). All random
 seeds are fixed, so results are bit-for-bit reproducible.
 
 ## Modules
