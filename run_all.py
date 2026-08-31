@@ -180,10 +180,26 @@ sweeps = {}
 for e in [0.0, -0.5]:
     d = fefet.FeFET(eps_pct=e)
     sweeps[e] = d.sweep(x_max=6.0, n=401)
-mw0, vtf0, vtb0 = fefet.memory_window(*sweeps[0.0][:4])
-mw5, vtf5, vtb5 = fefet.memory_window(*sweeps[-0.5][:4])
+_, vtf0, vtb0 = fefet.memory_window(*sweeps[0.0][:4])
+_, vtf5, vtb5 = fefet.memory_window(*sweeps[-0.5][:4])
+
+# Reported windows are ensemble averages over independent draws of the
+# coercive-field distribution. A single draw of a finite hysteron
+# ensemble is not a converged quantity: see the convergence study below.
+mw0, mw0_sd, _ = fefet.memory_window_ensemble(0.0)
+mw5, mw5_sd, _ = fefet.memory_window_ensemble(-0.5)
 R["MW_V_eps0"] = float(mw0)
+R["MW_V_eps0_sd"] = float(mw0_sd)
 R["MW_V_eps-0.5"] = float(mw5)
+R["MW_V_eps-0.5_sd"] = float(mw5_sd)
+
+# --- convergence of the memory window in hysteron count and ensemble ---
+conv = {}
+for nd in [400, 1600, 6400]:
+    m, s, _ = fefet.memory_window_ensemble(0.0, n_seeds=20, n_dom=nd)
+    conv[str(nd)] = {"mean": float(m), "sd": float(s),
+                     "spread_pct": float(100.0 * s / m)}
+R["MW_convergence"] = conv
 
 # retained (nonvolatile) read currents at hold x = 0
 def retained_reads(e):
@@ -220,6 +236,9 @@ for tf in tFE_grid:
     vprog_t.append(max(4.0, 2.2e8 * tf))
 mw_t = np.array(mw_t)
 R["MW_V_87nm"] = float(mw_t[-1])
+R["tFE_grid_nm"] = [float(v * 1e9) for v in tFE_grid]
+R["MW_vs_tFE_V"] = [float(v) for v in mw_t]
+R["Vprog_vs_tFE_V"] = [float(v) for v in vprog_t]
 
 fig, axs = plt.subplots(2, 2, figsize=(7.0, 5.2))
 ax = axs[0, 0]
@@ -260,14 +279,14 @@ ax2.spines["right"].set_visible(True)
 panel_label(ax, "(c)")
 
 ax = axs[1, 1]
-mwlist = []
-for e in [0.0, -0.25, -0.5, -0.75, -1.0]:
-    d = fefet.FeFET(eps_pct=e)
-    s = d.sweep(x_max=6.0, n=301)
-    mw, _, _ = fefet.memory_window(*s[:4])
-    mwlist.append(mw)
 epsl = [0.0, -0.25, -0.5, -0.75, -1.0]
-ax.plot(epsl, mwlist, "o-", color=OI["purple"], ms=4, label="memory window")
+mwlist, mwsd = [], []
+for e in epsl:
+    m, s, _ = fefet.memory_window_ensemble(e, n=301)
+    mwlist.append(m)
+    mwsd.append(s)
+ax.errorbar(epsl, mwlist, yerr=mwsd, fmt="o-", color=OI["purple"], ms=4,
+            capsize=2.5, lw=1.2, label="memory window")
 ax.set_ylim(0, 2.0)
 ax.set_xlabel("Biaxial strain (%)")
 ax.set_ylabel("Memory window (V)")
@@ -789,6 +808,7 @@ ax.set_xlabel(r"$t_{\rm FE}$ (nm)")
 ax.set_ylabel(r"$|E_{\rm dep}|/E_{\rm c}$ (retained state)")
 panel_label(ax, "(a)")
 R["Edep_over_Ec_30nm"] = float(Edep_list[2])
+R["Edep_over_Ec_vs_tFE"] = [float(v) for v in Edep_list]
 ax = axs[1]
 ax.plot(tFE_grid * 1e9, np.array(vprog_t), "s-", ms=4, color=OI["green"])
 ax.set_xlabel(r"$t_{\rm FE}$ (nm)")
@@ -1137,6 +1157,179 @@ for e_tag, e in [("m022", -0.22), ("m05", -0.5)]:
     print(f"  eps={e:+.2f}%: mu x{mu_gain:.2f}  Ion x{R[f'Ion_gain_{e_tag}']:.2f}  "
           f"tpLH={tp_e*1e12:.1f} ps (EDP x{R[f'EDP_gain_{e_tag}']:.2f})  "
           f"MLC margin x{R[f'MLC_margin_gain_{e_tag}']:.2f}")
+
+# ======================================================================
+print("[9/9] Channel-decoupling law for the memory window ...")
+
+# In the MFMIS stack, x = t_FE (D - P_sw)/(eps0 eps_b) + D/C_hBN + psi_s(p)
+# with D = q p + Q_slow. A constant-current read fixes p, so psi_s and the
+# free part of D are the same on both branches and cancel on subtraction:
+#
+#   MW = t_FE (dQ_slow - dP_sw)/(eps0 eps_b) + dQ_slow/C_hBN
+#
+# The channel density of states, quantum capacitance, mobility and strain
+# do not appear. Only the history-dependent trapped charge survives.
+DENOM = P.eps0 * P.eps_FE_b
+
+
+def branch_probe(eps=0.0, Dit=0.0, t_FE=None, n_dom=6400, seed=3,
+                 x_max=6.0, n=401):
+    """Sweep the device and return, at the constant-current threshold
+    crossing of each branch, the drive, current, switched polarization,
+    trapped charge and hole density."""
+    fefet._PSI_TAB.clear()
+    d = fefet.FeFET(eps_pct=eps, n_dom=n_dom, seed=seed, Dit_cm2=Dit,
+                    t_FE=t_FE)
+    I_crit = 1e-7 * (P.W_ch / 1e-6)
+
+    def run(xs):
+        rec = []
+        for x in xs:
+            _, p = d.solve_bias(x)
+            rec.append((x, d.drain_current(p), d.fe.P_switch(),
+                        d.Q_slow(), p))
+        return np.array(rec)
+
+    d.fe.reset(-1)
+    d.reset_traps()
+    run(np.linspace(0.0, -x_max, 50))
+    fwd = run(np.linspace(-x_max, x_max, n))
+    bwd = run(np.linspace(x_max, -x_max, n))[::-1]
+
+    def cross(rec):
+        I = rec[:, 1]
+        idx = np.where(I > I_crit)[0]
+        if len(idx) == 0 or idx[0] == 0:
+            return None
+        i = idx[0]
+        y0, y1 = np.log10(I[i - 1]), np.log10(I[i])
+        if y1 == y0:
+            return rec[i]
+        w = (np.log10(I_crit) - y0) / (y1 - y0)
+        return rec[i - 1] + w * (rec[i] - rec[i - 1])
+
+    return cross(fwd), cross(bwd), d
+
+
+def law_check(**kw):
+    f, b, d = branch_probe(**kw)
+    if f is None or b is None:
+        return None
+    mw_sim = float(f[0] - b[0])
+    dP, dQ = float(f[2] - b[2]), float(f[3] - b[3])
+    mw_law = float(d.t_FE * (dQ - dP) / DENOM + dQ / d.C_hBN)
+    return dict(mw_sim=mw_sim, mw_law=mw_law, dP=dP, dQ=dQ,
+                err_pct=100.0 * (mw_law - mw_sim) / mw_sim)
+
+
+law_cases = [("eps = -1.0%", dict(eps=-1.0)),
+             ("eps = -0.5%", dict(eps=-0.5)),
+             ("eps =  0.0%", dict(eps=0.0)),
+             ("eps = +0.46%", dict(eps=0.46)),
+             ("eps = +0.90%", dict(eps=0.90)),
+             ("t_FE = 15 nm", dict(t_FE=15e-9)),
+             ("t_FE = 60 nm", dict(t_FE=60e-9)),
+             ("t_FE = 86.5 nm", dict(t_FE=86.5e-9)),
+             ("Dit = 3e11", dict(Dit=3e11)),
+             ("Dit = 1e12", dict(Dit=1e12)),
+             ("Dit = 3e12", dict(Dit=3e12)),
+             ("Dit = 1e13", dict(Dit=1e13))]
+
+law_rows = []
+for name, kw in law_cases:
+    r = law_check(**kw)
+    if r is None:
+        continue
+    r["case"] = name
+    law_rows.append(r)
+    print(f"  {name:>14}: sim {r['mw_sim']:.4f} V   law {r['mw_law']:.4f} V"
+          f"   err {r['err_pct']:+.2f} %")
+
+R["decoupling_law_cases"] = [
+    {k: (v if isinstance(v, str) else float(v)) for k, v in r.items()}
+    for r in law_rows]
+R["decoupling_law_max_err_pct"] = float(
+    max(abs(r["err_pct"]) for r in law_rows))
+R["decoupling_law_max_err_pct_clean"] = float(
+    max(abs(r["err_pct"]) for r in law_rows if r["dQ"] == 0.0))
+
+# --- the strain lever: valley-resolved quantum capacitance -------------
+eps_cq = np.array([-1.0, -0.8, -0.6, -0.4, -0.2, 0.0, 0.1, 0.2, 0.3,
+                   0.4, 0.46, 0.55, 0.7, 0.9])
+cq_list, mu_list, mw_list_l, fG_list = [], [], [], []
+for e in eps_cq:
+    f, b, d = branch_probe(eps=float(e))
+    p_th = max(float(f[4]), 1e10)
+    psi_th = fefet.psi_of_p(p_th, float(e))
+    cq_list.append(fefet.quantum_cap(psi_th, float(e)))
+    mu_list.append(d.mu * 1e4)
+    mw_list_l.append(float(f[0] - b[0]))
+    NKd, NGd = fefet.NK_dos(), fefet.NG_dos()
+    aK = (psi_th - fefet.phi_F(float(e))) / P.kT_eV
+    aG = aK - fefet.dE_GK(float(e)) / P.kT_eV
+    pK = NKd * P.kT * np.log1p(np.exp(np.clip(aK, -60, 60)))
+    pG = NGd * P.kT * np.log1p(np.exp(np.clip(aG, -60, 60)))
+    fG_list.append(float(pG / (pK + pG)))
+cq_arr = np.array(cq_list)
+mu_arr = np.array(mu_list)
+mw_arr_l = np.array(mw_list_l)
+
+R["eps_cross_GammaK_pct"] = float(P.dE_GK0 / P.dE_GK_gauge)
+R["CQ_range_x"] = float(cq_arr.max() / cq_arr.min())
+R["mu_range_x"] = float(mu_arr.max() / mu_arr.min())
+R["MW_spread_over_CQ_sweep_pct"] = float(
+    100.0 * (mw_arr_l.max() - mw_arr_l.min()) / mw_arr_l.mean())
+R["DOS_weight_ratio_Gamma_K"] = float((P.gG * P.mG_h) / (P.gK * P.mK_h))
+print(f"  C_Q varies x{R['CQ_range_x']:.1f}, mobility x{R['mu_range_x']:.1f},"
+      f" window spread {R['MW_spread_over_CQ_sweep_pct']:.2f} %")
+
+# --- figure -----------------------------------------------------------
+fig, axs = plt.subplots(1, 3, figsize=(9.4, 2.9))
+
+ax = axs[0]
+ax.plot(eps_cq, cq_arr * 1e2, "o-", color=OI["blue"], ms=3.5)
+ax.axvline(R["eps_cross_GammaK_pct"], color="gray", lw=0.7, ls=":")
+ax.text(R["eps_cross_GammaK_pct"] + 0.03, cq_arr.min() * 1e2 * 1.6,
+        r"$\Gamma$ crosses" "\n" r"K-VBM", fontsize=6.5, color="0.3")
+ax.set_yscale("log")
+ax.set_xlabel("Biaxial strain (%)")
+ax.set_ylabel(r"$C_{\rm Q}$ at threshold ($\mu$F/cm$^2$)")
+panel_label(ax, "(a)")
+
+ax = axs[1]
+ax.plot(eps_cq, mu_arr, "s-", color=OI["orange"], ms=3.5)
+ax.set_yscale("log")
+ax.set_xlabel("Biaxial strain (%)")
+ax.set_ylabel(r"$\mu_{\rm h}$ (cm$^2$/Vs)")
+ax2 = ax.twinx()
+ax2.plot(eps_cq, np.array(fG_list) * 100, "^--", color=OI["green"], ms=3)
+ax2.set_ylabel(r"$\Gamma$-valley occupancy (%)", color=OI["green"])
+ax2.tick_params(axis="y", colors=OI["green"])
+ax2.spines["right"].set_visible(True)
+panel_label(ax, "(b)")
+
+ax = axs[2]
+sims = np.array([r["mw_sim"] for r in law_rows])
+laws = np.array([r["mw_law"] for r in law_rows])
+clean = np.array([r["dQ"] == 0.0 for r in law_rows])
+lim = [0.0, 1.08 * max(sims.max(), laws.max())]
+ax.plot(lim, lim, "-", color="0.6", lw=0.8, zorder=1)
+ax.scatter(sims[clean], laws[clean], s=26, color=OI["blue"],
+           label="clean interface", zorder=3)
+ax.scatter(sims[~clean], laws[~clean], s=26, marker="D",
+           color=OI["red"], label="with traps", zorder=3)
+ax.set_xlim(lim)
+ax.set_ylim(lim)
+ax.set_xlabel("Memory window, simulated (V)")
+ax.set_ylabel("Memory window, from Eq. (law) (V)")
+ax.legend(frameon=True, loc="upper left", fontsize=6.5)
+ax.text(0.97, 0.06,
+        f"max error {R['decoupling_law_max_err_pct']:.2f} %",
+        transform=ax.transAxes, ha="right", fontsize=6.5, color="0.3")
+panel_label(ax, "(c)")
+
+fig.tight_layout()
+save(fig, "fig7_decoupling")
 
 # ======================================================================
 with open(os.path.join(os.path.dirname(__file__), "results.json"), "w") as f:

@@ -42,33 +42,89 @@ def NK_dos():
     return P.gK * P.mK_h * P.m0 / (2.0 * np.pi * P.hbar ** 2) * 2.0
 
 
+def NG_dos():
+    """Gamma-valley 2D density of states (heavy holes)."""
+    return P.gG * P.mG_h * P.m0 / (2.0 * np.pi * P.hbar ** 2) * 2.0
+
+
+def dE_GK(eps_pct):
+    """Gamma-K separation (eV), positive when Gamma lies below the K-VBM.
+    Same strain gauge used by the transport model (mobility.valley_edges),
+    so the electrostatics and the transport see one consistent band
+    structure."""
+    return P.dE_GK0 - P.dE_GK_gauge * eps_pct
+
+
+# Set False to recover the single-valley (K-only) electrostatics used in
+# the first version of this model; kept for regression testing.
+TWO_VALLEY_ES = True
+
+
+def p_of_psi(psi, eps_pct):
+    """Hole sheet density (m^-2) at surface potential psi (V).
+
+    Both hole valleys are filled with Fermi-Dirac statistics. The Gamma
+    valley sits dE_GK(eps) below the K-VBM and carries roughly three
+    times the K-valley density of states (gG*mG = 2.20 against
+    gK*mK = 0.72), so its strain-driven population changes the channel
+    quantum capacitance substantially."""
+    NK = NK_dos()
+    aK = (np.asarray(psi, dtype=float) - phi_F(eps_pct)) / P.kT_eV
+    pK = NK * P.kT * np.log1p(np.exp(np.clip(aK, -60, 60)))
+    if not TWO_VALLEY_ES:
+        return pK
+    NG = NG_dos()
+    aG = aK - dE_GK(eps_pct) / P.kT_eV
+    pG = NG * P.kT * np.log1p(np.exp(np.clip(aG, -60, 60)))
+    return pK + pG
+
+
+_PSI_TAB = {}
+
+
+def _psi_table(eps_pct):
+    """Monotonic (log p, psi) table for inverting p_of_psi at this strain.
+    Built once per strain value; the inversion is needed inside the
+    self-consistent field solve, so an analytic-quality interpolation is
+    much cheaper than a nested root find."""
+    key = round(float(eps_pct), 9)
+    tab = _PSI_TAB.get(key)
+    if tab is None:
+        psi_g = np.linspace(phi_F(eps_pct) - 2.5, phi_F(eps_pct) + 2.5, 24001)
+        p_g = p_of_psi(psi_g, eps_pct)
+        good = p_g > 0
+        tab = (np.log(p_g[good]), psi_g[good])
+        _PSI_TAB[key] = tab
+    return tab
+
+
 def psi_of_p(p, eps_pct):
     """Surface potential (V) needed to hold hole density p (m^-2)."""
     if p <= 0:
         return -10.0
-    NK = NK_dos()
-    arg = p / (NK * P.kT)
-    if arg < 30:
-        val = np.expm1(arg)
-        return phi_F(eps_pct) + P.kT_eV * np.log(val)
-    return phi_F(eps_pct) + P.kT_eV * arg
+    if not TWO_VALLEY_ES:
+        NK = NK_dos()
+        arg = p / (NK * P.kT)
+        if arg < 30:
+            return phi_F(eps_pct) + P.kT_eV * np.log(np.expm1(arg))
+        return phi_F(eps_pct) + P.kT_eV * arg
+    lp, ps = _psi_table(eps_pct)
+    return float(np.interp(np.log(p), lp, ps))
 
 
-def p_of_psi(psi, eps_pct):
-    """Inverse of psi_of_p: hole sheet density (m^-2) at surface
-    potential psi (V)."""
-    NK = NK_dos()
-    arg = (psi - phi_F(eps_pct)) / P.kT_eV
-    return NK * P.kT * np.log1p(np.exp(np.clip(arg, -60, 60)))
+def quantum_cap(psi, eps_pct, h=1e-4):
+    """Channel quantum capacitance C_Q = q dp/dpsi (F/m^2)."""
+    return P.q * (p_of_psi(psi + h, eps_pct)
+                  - p_of_psi(psi - h, eps_pct)) / (2.0 * h)
 
 
 T_CH = 0.65e-9  # monolayer WSe2 thickness (m), for 2D -> 3D densities
 
 
 class FeFET:
-    def __init__(self, t_FE=None, t_hBN=None, eps_pct=0.0, n_dom=400,
+    def __init__(self, t_FE=None, t_hBN=None, eps_pct=0.0, n_dom=6400,
                  Dit_cm2=0.0, trap_mode="worst", sigma_p_cm2=1e-15,
-                 n_trap_bins=24):
+                 n_trap_bins=24, seed=7):
         """Interface traps at the WSe2/h-BN interface: uniform density
         Dit_cm2 (cm^-2 eV^-1) over a 0.6 eV band of gap states.
 
@@ -89,7 +145,7 @@ class FeFET:
         self.t_hBN = P.t_hBN if t_hBN is None else t_hBN
         self.C_hBN = P.eps0 * P.eps_hBN / self.t_hBN
         self.eps = eps_pct
-        self.fe = PreisachFE(n_dom=n_dom)
+        self.fe = PreisachFE(n_dom=n_dom, seed=seed)
         self.mu = M.hole_mobility(eps_pct)  # m^2/Vs
         # --- interface trap band ---
         self.Dit = Dit_cm2 * 1e4          # states / (m^2 eV)
@@ -248,6 +304,25 @@ class FeFET:
             I_b.append(self.drain_current(p))
         return (xs_f, np.array(I_f), xs_b, np.array(I_b),
                 np.array(p_f), np.array(p_b))
+
+
+def memory_window_ensemble(eps_pct=0.0, n_seeds=8, n_dom=6400, x_max=6.0,
+                           n=401, **kw):
+    """Memory window averaged over independent draws of the coercive-field
+    distribution, returned as (mean, standard deviation, all values).
+
+    A single draw of a finite hysteron ensemble carries a statistical
+    spread that does not vanish with grid refinement alone: at n_dom = 400
+    the window scatters by about 14 % from seed to seed, at n_dom = 6400
+    by about 2 %. Reported windows therefore quote the ensemble mean and
+    its spread rather than one realization."""
+    vals = []
+    for s in range(1, n_seeds + 1):
+        d = FeFET(eps_pct=eps_pct, n_dom=n_dom, seed=s, **kw)
+        sw = d.sweep(x_max=x_max, n=n)
+        vals.append(memory_window(*sw[:4])[0])
+    v = np.array(vals, dtype=float)
+    return float(v.mean()), float(v.std()), v
 
 
 def memory_window(xs_f, I_f, xs_b, I_b, I_crit=None):

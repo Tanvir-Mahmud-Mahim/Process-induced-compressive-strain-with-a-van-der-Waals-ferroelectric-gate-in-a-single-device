@@ -23,11 +23,11 @@ import params as P
 class PreisachFE:
     """Ensemble of square hysterons with Gaussian coercive-field spread."""
 
-    def __init__(self, n_dom=400, Ec=None, sigma_rel=None, Pr=None):
+    def __init__(self, n_dom=400, Ec=None, sigma_rel=None, Pr=None, seed=7):
         Ec = P.Ec_CIPS if Ec is None else Ec
         sigma_rel = P.sigma_Ec if sigma_rel is None else sigma_rel
         self.Pr = P.Pr_CIPS if Pr is None else Pr
-        rng = np.random.default_rng(7)
+        rng = np.random.default_rng(seed)
         self.Ecs = np.abs(rng.normal(Ec, sigma_rel * Ec, n_dom))
         self.Ecs = np.clip(self.Ecs, 0.15 * Ec, 3.0 * Ec)
         self.state = -np.ones(n_dom)  # start fully polarized "down"
