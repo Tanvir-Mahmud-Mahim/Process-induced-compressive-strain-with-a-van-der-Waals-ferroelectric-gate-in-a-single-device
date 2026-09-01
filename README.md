@@ -1,7 +1,8 @@
 # CIPS/WSe2 p-Type FeFET: Multiscale Simulation Code Base
 
-Code accompanying the article "An Exact Decoupling Law for the Memory
-Window of Two-Dimensional Ferroelectric Transistors".
+Code accompanying the article "Channel decoupling of the memory window in
+CuInP2S6-gated two-dimensional ferroelectric transistors: an exact law and
+its consequences for interface processing".
 
 Repository:
 https://github.com/Tanvir-Mahmud-Mahim/Process-induced-compressive-strain-with-a-van-der-Waals-ferroelectric-gate-in-a-single-device
