@@ -1,0 +1,102 @@
+CHANGES
+=======
+
+v2.0
+----
+Code accompanying the revised article "Channel decoupling of the memory
+window in CuInP2S6-gated two-dimensional ferroelectric transistors:
+conditions, limits, and implications for interface processing".
+
+New modules and studies
+  * fefet_ext.py: generalized MFMIS solver (ferroelectric-to-channel area
+    ratio, ferroelectric-side charge sheet, back gate, ambipolar channel,
+    branch-dependent or density-dependent mobility, scaled density of
+    states). With all extensions off it reproduces fefet.py.
+  * revision_studies.py: scope and robustness studies S0 to S9
+    (revision_results.json).
+  * revision_figures.py: figures fig8_scope and figS8_extensions.
+  * s10_expt_geometry.py: windows for the stacks of fabricated CIPS MFMIS
+    devices (s10_results.json).
+  * s11_kinetic_convergence.py: convergence of the finite-rate trap model
+    (s11_results.json).
+
+Parameter corrections (params.py)
+  * Gamma-K strain rate 341 -> 184 meV per percent of compression (341 meV
+    is the separation at -1 percent in Afrid et al.).
+  * K-valley hole mass 0.36 -> 0.40 m0 (C2DB).
+  * h-BN permittivity 3.5 -> 3.76 (Laturia et al.).
+  * Each parameter is labeled by source type: [DB], [DFT], [EXP], [CAL],
+    [ASM]. The CIPS background permittivity is labeled as assumed.
+  * Transport model recalibrated (D_iv 2.1e11 eV/m, sigma_iv 50 meV,
+    screening factor 0.86).
+
+Numerical changes (run_all.py)
+  * Law table on a 1.9 mV grid (n = 6401); the residual of the earlier
+    30 mV grid was an interpolation artifact, not a mobility effect.
+  * Kinetic trap sweeps on 4801 points. The kinetic window of 1.398 V at
+    Dit = 3e12 cm^-2 eV^-1 in v1.3 came from a non-converged 301-point
+    sweep; the converged value is 1.245 V.
+  * Resistor-loaded reference stage 10 -> 5 MOhm (as in Lee et al.).
+  * Trap-density bands in figS6_traps relabeled ("ALD or native oxides",
+    "CVD-grown channels") to match the cited source.
+  * Legend of fig1_concept kept inside its frame.
+  * Figures use embedded TrueType fonts (no Type 3 fonts).
+
+Removed
+  * thickness_table.json (not produced by any script in this release).
+
+v1.3
+----
+Channel electrostatics and memory-window convergence.
+
+fefet.py
+  * The channel now fills BOTH hole valleys (K and Gamma) with Fermi-Dirac
+    statistics, using the same strain-dependent Gamma-K separation as the
+    transport model. The Gamma valley carries about three times the density
+    of states of K, so its strain-driven population makes the channel
+    quantum capacitance strain dependent. Set TWO_VALLEY_ES = False to
+    recover the previous K-only electrostatics; under compressive strain
+    the two agree to better than 0.01 percent, so no previously published
+    compressive result changes.
+  * New: quantum_cap(), NG_dos(), dE_GK(), memory_window_ensemble().
+  * Default hysteron count raised from 400 to 6400.
+
+ferro.py
+  * PreisachFE now accepts a seed, so the coercive-field ensemble can be
+    resampled independently.
+
+run_all.py
+  * Reported memory windows are ensemble means over independent seeds with
+    standard deviations, not single draws.
+  * New convergence study (results.json key MW_convergence).
+  * New section testing the channel-decoupling law for the memory window,
+    producing figure fig7_decoupling.
+  * Records the ferroelectric thickness grid, the window and program drive
+    at each thickness, and the retained depolarization field.
+
+IMPORTANT CORRECTION TO EARLIER RELEASES
+  Memory windows in v1.0 through v1.2.1 were computed with 400 hysterons
+  and a single random seed. At that ensemble size the window scatters by
+  about 3 percent (standard deviation) from seed to seed, and its mean is
+  9.5 percent below the converged value. The converged, seed-averaged
+  window at zero strain is 1.413 +/- 0.008 V, not the 1.238 V reported
+  earlier. All quantities derived from the window are correspondingly
+  revised. Transport, current, circuit and multilevel results are
+  unaffected.
+
+v1.2.1
+------
+Manuscript PDFs removed from the archive; code, benchmarks and figures only.
+
+v1.2
+----
+Finite-rate Shockley-Read-Hall interface-trap kinetics; scale-length
+analysis; metrics at experimentally demonstrated strain levels.
+
+v1.1
+----
+Interface-trap robustness study (worst-case bounding model).
+
+v1.0
+----
+Initial release.

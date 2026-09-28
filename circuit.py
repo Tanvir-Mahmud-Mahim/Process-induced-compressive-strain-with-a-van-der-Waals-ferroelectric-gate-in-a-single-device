@@ -1,9 +1,10 @@
 """
 circuit.py
 Circuit-level projection of strain-augmented complementary nonvolatile
-logic built from the p-type CIPS/WSe2 FeFET (pull-up) and a WSe2 n-type
-FET (pull-down), replacing the 10 MOhm resistor load of the
-experimental CIPS latch (Lee 2026).
+logic built from the p-type CIPS/WSe2 FeFET (pull-up) and a generic
+n-type FET (pull-down, assumed parameters), compared with a resistor-loaded
+stage (5 MOhm, the pull-up used in the CIPS FeFET inverter of Lee 2026,
+Supporting Information Fig. S9).
 
 Transistors use a smooth EKV-style all-region model whose threshold
 voltages are extracted from the self-consistent FeFET simulation
@@ -63,7 +64,7 @@ def k_pfet(eps_pct, t_FE=None, t_hBN=None):
 
 
 def k_nfet():
-    C_n = P.eps0 * P.eps_hBN / P.t_hBN  # h-BN gated n-FET (Lee 2026 style)
+    C_n = P.eps0 * P.eps_hBN / P.t_hBN  # h-BN gated n-FET (assumed)
     return P.mu_n * C_n * (P.W_ch / P.L_ch)
 
 
@@ -145,11 +146,10 @@ class NVInverter:
         return In_off * self.VDD, Ip_off * self.VDD
 
 
-def resistor_inverter_vtc(eps_pct=0.0, R=10e6, VT_state=1, n=201,
+def resistor_inverter_vtc(eps_pct=0.0, R=5e6, VT_state=1, n=201,
                           VT_p_states=(0.80, -0.43), VDD=None):
-    """Reference: experimental-style resistor-load inverter (Lee 2026)
-    built with the same p-FeFET as driver (pull-down configuration is
-    n-FeFET in the experiment; here we model the resistor limit)."""
+    """Reference: resistor-loaded inverter (5 MOhm, as in the CIPS FeFET
+    inverter of Lee 2026, SI Fig. S9) built with the same p-FeFET."""
     VDD = P.VDD if VDD is None else VDD
     k_p = k_pfet(eps_pct)
     Vin = np.linspace(0, VDD, n)
@@ -197,4 +197,4 @@ if __name__ == "__main__":
     snm = butterfly_snm(NVInverter(state=1), NVInverter(state=1))
     print(f"SNM (programmed pair): {snm:.3f} V")
     # resistor reference static power when output low
-    print(f"Resistor-load static power (output low): {P.VDD**2/10e6*1e6:.2f} uW")
+    print(f"Resistor-load static power (output low): {P.VDD**2/5e6*1e6:.2f} uW")

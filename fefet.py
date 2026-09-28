@@ -272,13 +272,14 @@ class FeFET:
         I = VDS / (1.0 / G_ch + R_c)
         return max(I, 1e-13)
 
-    def program(self, x_prog, x_hold=0.0, t_pulse=None):
+    def program(self, x_prog, x_hold=0.0, t_pulse=None, n_ramp=40):
         """Apply a program drive and return to hold, tracking states.
-        In dynamic trap mode, t_pulse is the total pulse duration (s)."""
-        dt = None if t_pulse is None else t_pulse / 80.0
-        for x in np.linspace(x_hold, x_prog, 40):
+        In dynamic trap mode, t_pulse is the total pulse duration (s),
+        spread over 2 n_ramp bias steps."""
+        dt = None if t_pulse is None else t_pulse / (2.0 * n_ramp)
+        for x in np.linspace(x_hold, x_prog, n_ramp):
             self.solve_bias(x, dt=dt)
-        for x in np.linspace(x_prog, x_hold, 40):
+        for x in np.linspace(x_prog, x_hold, n_ramp):
             self.solve_bias(x, dt=dt)
         return self.solve_bias(x_hold, dt=dt)
 

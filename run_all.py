@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 from matplotlib.patches import Rectangle, FancyArrow
 
 import params as P
@@ -41,7 +42,7 @@ plt.rcParams.update({
     "font.family": "serif",
     "font.serif": ["Times New Roman", "Liberation Serif", "STIXGeneral",
                    "DejaVu Serif"],
-    "mathtext.fontset": "stix"})
+    "mathtext.fontset": "stix", "pdf.fonttype": 42, "ps.fonttype": 42})
 
 
 def save(fig, name):
@@ -73,9 +74,10 @@ for e in eps_grid:
     pops.append(pG / (pK + pG))
 pops = np.array(pops)
 
-# published full-band targets (Afrid 2026, extrinsic, WSe2)
-tgt_eps = np.array([-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0])
-tgt_mu = np.array([2.37, 2.05, 1.75, 1.40, 1.00, 0.72, 0.55, 0.33])
+# first-principles targets (Afrid 2026, extrinsic, WSe2): -1 % value from
+# the text (2.37); the others digitized from their Fig. 5b (+-0.03)
+tgt_eps = np.array([-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0])
+tgt_mu = np.array([2.37, 2.17, 1.91, 1.51, 1.00, 0.655, 0.47, 0.34, 0.26])
 
 fig, axs = plt.subplots(2, 2, figsize=(7.0, 5.2))
 ax = axs[0, 0]
@@ -103,7 +105,7 @@ panel_label(ax, "(b)")
 ax = axs[1, 0]
 ax.plot(eps_grid, mu_grid / mu0, color=OI["green"], label="this work (two-valley)")
 ax.plot(tgt_eps, tgt_mu, "o", ms=4.5, color=OI["black"], mfc="none",
-        label="full-band (Afrid 2026)")
+        label="first-principles (Afrid 2026)")
 ax.errorbar([-0.22], [1.70], yerr=[0.21], fmt="s", ms=4.5,
             color=OI["red"], label="FET expt. (Zhao 2026)", capsize=2.5)
 ax.axhline(1, color="gray", lw=0.6, ls=":")
@@ -358,7 +360,7 @@ R["EDP_gain_m1pct"] = float(edp[-1] / edp[0])
 
 Pn_off, Pp_off = inv1.static_power()
 P_stat_cmos = max(Pn_off, Pp_off)
-P_stat_res = P.VDD ** 2 / 10e6
+P_stat_res = P.VDD ** 2 / 5e6
 R["P_static_cmos_pW"] = float(P_stat_cmos * 1e12)
 R["P_static_res_uW"] = float(P_stat_res * 1e6)
 
@@ -472,7 +474,7 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from matplotlib.patches import FancyBboxPatch
 
 fig = plt.figure(figsize=(7.2, 3.0))
-gs = fig.add_gridspec(1, 4, width_ratios=[1.16, 0.72, 0.86, 0.90],
+gs = fig.add_gridspec(1, 4, width_ratios=[1.10, 0.78, 0.86, 0.90],
                       left=0.005, right=0.99, top=0.89, bottom=0.05,
                       wspace=0.26)
 
@@ -611,9 +613,9 @@ rows = [
     ("sw", LC["hbn"],     "h-BN, 10 nm"),
     ("sw", LC["wse2"],    r"WSe$_2$ (1L, strained)"),
     ("sw", LC["pads"],    "S/D contacts (Au)"),
-    ("sw", LC["al2o3"],   r"Al$_2$O$_3$"),
+    ("sw", LC["al2o3"],   r"Al$_2$O$_3$ stressor (schematic)"),
     ("sw", LC["sio2"],    r"SiO$_2$"),
-    ("sw", LC["si"],      "p++ Si back gate"),
+    ("sw", LC["si"],      "Si substrate"),
     ("txt", None, r"$W$ = 4 $\mu$m,  $L$ = 2 $\mu$m"),
     ("gap", None, None),
     ("arr", OI["blue"],  r"compression $\epsilon<0$"),
@@ -654,12 +656,24 @@ for kind, colr, label in rows:
         axL.text(0.25, y, label, fontsize=6.9, va="center")
     y -= DY
 
+# keep every legend label inside the box: shrink the text uniformly if the
+# widest label would cross the right edge (box inner edge at 0.96)
+fig.canvas.draw()
+_r = fig.canvas.get_renderer()
+_inv = axL.transAxes.inverted()
+_right = max(_inv.transform(t.get_window_extent(_r))[1, 0] for t in axL.texts)
+if _right > 0.96:
+    _f = (0.96 - 0.07) / (_right - 0.07)
+    for t in axL.texts:
+        if t.get_text() != "+":
+            t.set_fontsize(t.get_fontsize() * _f)
+
 # ------------------------- (b) valley schematic ------------------------
 ax = fig.add_subplot(gs[2])
 kk = np.linspace(-1, 1, 200)
 E_K = -2.2 * (kk - 0.55) ** 2
 E_G = -0.157 - 1.0 * (kk + 0.45) ** 2
-E_Gc = -0.157 - 0.341 * 0.7 - 1.0 * (kk + 0.45) ** 2
+E_Gc = -0.157 - 0.184 * 0.7 - 1.0 * (kk + 0.45) ** 2
 ax.plot(kk, E_K, color=OI["black"], label="K valley")
 ax.plot(kk, E_G, color="gray", ls="--", label=r"$\Gamma$, $\epsilon=0$")
 ax.plot(kk, E_Gc, color=OI["blue"], label=r"$\Gamma$, compressed")
@@ -682,7 +696,7 @@ ax = fig.add_subplot(gs[3])
 ax.axis("off")
 ax.set_xlim(0, 10)
 ax.set_ylim(0, 10)
-steps = ["Two-valley strained transport\n(calibrated to full-band data)",
+steps = ["Two-valley strained transport\n(calibrated to first-principles data)",
          "Multidomain CIPS model\n(Preisach + LK kinetics)",
          "Self-consistent MFMIS\nelectrostatics",
          "Nonvolatile logic: VTC, SNM,\nrestore, delay, energy"]
@@ -740,13 +754,14 @@ save(fig, "figS1_valley")
 # S2: sensitivity of mobility calibration
 fig, axs = plt.subplots(1, 2, figsize=(6.6, 2.4))
 ax = axs[0]
-for div, col in zip([1.2e11, 1.5e11, 1.8e11], [OI["sky"], OI["blue"], OI["purple"]]):
+for div, col in zip([0.8 * P.D_iv / P.eV, P.D_iv / P.eV, 1.2 * P.D_iv / P.eV],
+                    [OI["sky"], OI["blue"], OI["purple"]]):
     mus = np.array([M.hole_mobility(e, D_iv=div * P.eV) for e in
                     np.linspace(-1, 0.5, 16)])
     mu00 = M.hole_mobility(0.0, D_iv=div * P.eV)
     ax.plot(np.linspace(-1, 0.5, 16), mus / mu00, "o-", ms=3, color=col,
-            label=rf"$D_{{\rm iv}}$ = {div/1e11:.1f}e11 eV/m")
-ax.plot(tgt_eps, tgt_mu, "k s", ms=4, mfc="none", label="full-band")
+            label=rf"$D_{{\rm iv}}$ = {div/1e11:.2f}e11 eV/m")
+ax.plot(tgt_eps, tgt_mu, "k s", ms=4, mfc="none", label="first-principles")
 ax.set_xlim(-1.05, 0.55)
 ax.set_xlabel("Biaxial strain (%)")
 ax.set_ylabel(r"$\mu/\mu_0$")
@@ -754,14 +769,15 @@ ax.legend(frameon=False, fontsize=6.5)
 panel_label(ax, "(a)")
 ax = axs[1]
 sig_save = M.SIGMA_IV
-for sig, col in zip([70e-3, 90e-3, 110e-3], [OI["sky"], OI["blue"], OI["purple"]]):
+sig0 = sig_save / P.eV
+for sig, col in zip([0.8 * sig0, sig0, 1.2 * sig0], [OI["sky"], OI["blue"], OI["purple"]]):
     M.SIGMA_IV = sig * P.eV
     mus = np.array([M.hole_mobility(e) for e in np.linspace(-1, 0.5, 16)])
     mu00 = M.hole_mobility(0.0)
     ax.plot(np.linspace(-1, 0.5, 16), mus / mu00, "o-", ms=3, color=col,
             label=rf"$\sigma_{{\rm iv}}$ = {sig*1e3:.0f} meV")
 M.SIGMA_IV = sig_save
-ax.plot(tgt_eps, tgt_mu, "k s", ms=4, mfc="none", label="full-band")
+ax.plot(tgt_eps, tgt_mu, "k s", ms=4, mfc="none", label="first-principles")
 ax.set_xlim(-1.05, 0.55)
 ax.set_xlabel("Biaxial strain (%)")
 ax.set_ylabel(r"$\mu/\mu_0$")
@@ -830,7 +846,7 @@ ax.set_ylabel("Node voltage (V)")
 ax.legend(frameon=False, fontsize=7)
 panel_label(ax, "(a)")
 ax = axs[1]
-labels = ["resistor load\n(Lee 2026 style)", "complementary\n(this work)"]
+labels = ["resistor load\n(5 M$\\Omega$)", "complementary\n(this work)"]
 vals = [P_stat_res * 1e6, P_stat_cmos * 1e6]
 bars = ax.bar(labels, vals, color=[OI["orange"], OI["green"]], width=0.55)
 ax.set_yscale("log")
@@ -891,11 +907,11 @@ axm.plot(eg, mm / mm[-1], color=OI["green"], lw=1.6)
 axm.set_xticks([-1, 0]); axm.set_yticks([1, 2])
 axm.tick_params(labelsize=6, pad=1.5)
 axm.set_xlabel("strain (%)", fontsize=6.5, labelpad=1)
-axm.set_title(r"$\mu_{\rm h}\times 2.3$", fontsize=7.5, pad=2,
+axm.set_title(r"$\mu_{\rm h}\times$" + f"{R['mu_ratio_m1pct']:.1f}", fontsize=7.5, pad=2,
               color=OI["green"])
 # small memory-window inset
 axp = fig.add_axes([pos.x0 + 0.175, 0.16, 0.135, 0.50])
-axp.plot([-1, 0], [1.24, 1.24], "o-", ms=3, color=OI["purple"], lw=1.6)
+axp.plot(epsl, mwlist, "o-", ms=3, color=OI["purple"], lw=1.6)
 axp.set_ylim(0, 2); axp.set_xticks([-1, 0]); axp.set_yticks([0, 1, 2])
 axp.tick_params(labelsize=6, pad=1.5)
 axp.set_xlabel("strain (%)", fontsize=6.5, labelpad=1)
@@ -908,7 +924,7 @@ axC.text(5.0, 9.6, "Nonvolatile logic", ha="center", fontsize=8.5,
          fontweight="bold")
 msgs = ["restores state after\npower loss (< 2 ns)",
         "10$^{8}\\times$ lower\nstatic power",
-        "2.3$\\times$ faster reads\nunder strain"]
+        f"{R['tpLH_ps_eps0'] / R['tpLH_ps_m1pct']:.1f}" + "$\\times$ faster reads\nunder strain"]
 mc = [OI["blue"], OI["green"], OI["red"]]
 for i, (m_, c_) in enumerate(zip(msgs, mc)):
     y = 7.3 - 2.9 * i
@@ -985,14 +1001,14 @@ fig, axs = plt.subplots(1, 2, figsize=(7.0, 2.5))
 ax = axs[0]
 ax.semilogx(Dit_grid, T0[:, 0], "o-", color=OI["blue"], ms=4)
 ax.axhline(R["MW_V_eps0"], color="0.6", ls=":", lw=0.9)
-ax.axvspan(5e9, 1e11, color=OI["green"], alpha=0.12)
+ax.axvspan(5e9, 7e10, color=OI["green"], alpha=0.12)
 ax.axvspan(5e11, 1e12, color=OI["orange"], alpha=0.12)
 ax.axvspan(5e12, 1e13, color=OI["red"], alpha=0.10)
-ax.text(2.2e10, 0.24, "h-BN\nclass", ha="center", fontsize=6.5,
+ax.text(2.2e10, 0.24, "h-BN\ninterfaces", ha="center", fontsize=6.5,
         color=OI["green"])
-ax.text(7e11, 0.24, "typical\noxides", ha="center", fontsize=6.5,
+ax.text(7e11, 0.24, "ALD or\nnative\noxides", ha="center", fontsize=6.5,
         color=OI["orange"])
-ax.text(7e12, 0.24, "CVD on\nSiO$_2$", ha="center", fontsize=6.5,
+ax.text(7e12, 0.24, "CVD-\ngrown\nchannels", ha="center", fontsize=6.5,
         color=OI["red"])
 ax.set_xlabel(r"$D_{\rm it}$ (cm$^{-2}$ eV$^{-1}$)")
 ax.set_ylabel("Memory window (V)")
@@ -1017,11 +1033,15 @@ save(fig, "figS6_traps")
 print("  [8b] dynamic SRH trap kinetics ...")
 
 # Memory window versus double-sweep duration at Dit = 1e12 (sigma = 1e-15 cm^2)
+N_DYN = 4801
 tsweep_grid = [1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0]
 mw_dyn = []
 for tt in tsweep_grid:
     dd = fefet.FeFET(eps_pct=0.0, Dit_cm2=1e12, trap_mode="dynamic")
-    ss = dd.sweep(x_max=6.0, n=301, t_total=tt)
+    # the kinetic sweeps need a fine bias grid: with n = 301 the explicit
+    # trap update over each (long) dwell step is not converged at high
+    # trap density; n = 4801 changes the window by < 0.5 % from n = 2401
+    ss = dd.sweep(x_max=6.0, n=N_DYN, t_total=tt)
     mwd, _, _ = fefet.memory_window(*ss[:4])
     mw_dyn.append(mwd)
 R["tsweep_grid_s"] = tsweep_grid
@@ -1030,7 +1050,7 @@ R["MW_dyn_vs_tsweep_Dit1e12"] = [float(v) for v in mw_dyn]
 # capture-cross-section sensitivity at a 1 s sweep
 # kinetic window at the higher trap density (1 s sweep)
 dd = fefet.FeFET(eps_pct=0.0, Dit_cm2=3e12, trap_mode="dynamic")
-ss = dd.sweep(x_max=6.0, n=301, t_total=1.0)
+ss = dd.sweep(x_max=6.0, n=N_DYN, t_total=1.0)
 mw3, _, _ = fefet.memory_window(*ss[:4])
 R["MW_dyn_Dit3e12_1s"] = float(mw3)
 
@@ -1038,7 +1058,7 @@ mw_sig = {}
 for sig in [1e-16, 1e-15, 1e-14]:
     dd = fefet.FeFET(eps_pct=0.0, Dit_cm2=1e12, trap_mode="dynamic",
                      sigma_p_cm2=sig)
-    ss = dd.sweep(x_max=6.0, n=301, t_total=1.0)
+    ss = dd.sweep(x_max=6.0, n=N_DYN, t_total=1.0)
     mwd, _, _ = fefet.memory_window(*ss[:4])
     mw_sig[sig] = float(mwd)
 R["MW_dyn_sigma_sens_Dit1e12_1s"] = {f"{k:.0e}": v for k, v in mw_sig.items()}
@@ -1050,12 +1070,12 @@ for Dit in [3e11, 1e12, 3e12]:
                      trap_mode="dynamic")
     dd.fe.reset(-1)
     dd.reset_traps()
-    dd.program(-6.0, 0.0, t_pulse=1e-4)
+    dd.program(-6.0, 0.0, t_pulse=1e-4, n_ramp=160)
     Ioff_d = dd.drain_current(dd.solve_bias(0.0, dt=1e-3)[1])
     dd.fe.reset(-1)
     dd.reset_traps()
-    dd.program(-6.0, 0.0, t_pulse=1e-4)
-    dd.program(+6.0, 0.0, t_pulse=1e-4)
+    dd.program(-6.0, 0.0, t_pulse=1e-4, n_ramp=160)
+    dd.program(+6.0, 0.0, t_pulse=1e-4, n_ramp=160)
     ts_r, ps_r = dd.hold(1e3, 0.0, n_sub=25)
     # trap-charge-corrected mobility at sampled points
     idx_s = [0, 6, 10, 14, 18, 24]
@@ -1081,8 +1101,8 @@ dd = fefet.FeFET(eps_pct=-1.0, n_dom=1600, Dit_cm2=1e12,
                  trap_mode="dynamic")
 dd.fe.reset(-1)
 dd.reset_traps()
-dd.program(-6.0, 0.0, t_pulse=1e-4)
-dd.program(+6.0, 0.0, t_pulse=1e-4)
+dd.program(-6.0, 0.0, t_pulse=1e-4, n_ramp=160)
+dd.program(+6.0, 0.0, t_pulse=1e-4, n_ramp=160)
 _, p_eq = dd.hold(1e3, 0.0, n_sub=25)
 N_t = dd.Q_slow() / P.q
 P.n_imp = n_imp_base + N_t
@@ -1104,9 +1124,9 @@ ax.semilogx(tsweep_grid, mw_dyn, "o-", color=OI["blue"], ms=4,
             label="dynamic SRH")
 ax.axhline(R["MW_V_eps0"], color=OI["black"], ls=":", lw=1.0)
 ax.axhline(T0[i12, 0], color=OI["red"], ls="--", lw=1.0)
-ax.text(2e-4, R["MW_V_eps0"] - 0.10, "trap-free", fontsize=6.5,
+ax.text(2e-4, R["MW_V_eps0"] + 0.02, "trap-free", fontsize=6.5,
         color=OI["black"])
-ax.text(2e-4, T0[i12, 0] + 0.05, "worst-case bound", fontsize=6.5,
+ax.text(2e-4, T0[i12, 0] - 0.045, "bounding model", fontsize=6.5,
         color=OI["red"])
 ax.set_xlabel("Double-sweep duration (s)")
 ax.set_ylabel("Memory window (V)")
@@ -1131,8 +1151,9 @@ save(fig, "figS7_trapdyn")
 
 # --- (ii) Short-channel validity: scale length -----------------------
 # lambda = sqrt((eps_ch_par / eps_hBN_perp) * t_ch * t_hBN)
-eps_ch_par = 15.3       # monolayer WSe2, in-plane static (Laturia 2018)
-eps_hBN_perp = 3.76     # bulk h-BN, out-of-plane static (Laturia 2018)
+eps_ch_par = 15.6       # monolayer WSe2, in-plane static (Laturia 2018,
+                        # corrected Table 2 of the 2020 Author Correction)
+eps_hBN_perp = P.eps_hBN  # bulk h-BN, out-of-plane static (Laturia 2018)
 t_ch = 0.65e-9          # monolayer WSe2 thickness
 lam = np.sqrt((eps_ch_par / eps_hBN_perp) * t_ch * P.t_hBN)
 R["scale_length_nm"] = float(lam * 1e9)
@@ -1225,8 +1246,9 @@ def law_check(**kw):
 law_cases = [("eps = -1.0%", dict(eps=-1.0)),
              ("eps = -0.5%", dict(eps=-0.5)),
              ("eps =  0.0%", dict(eps=0.0)),
-             ("eps = +0.46%", dict(eps=0.46)),
-             ("eps = +0.90%", dict(eps=0.90)),
+             ("eps = +0.50%", dict(eps=0.50)),
+             ("eps = +0.85%", dict(eps=0.85)),
+             ("eps = +1.00%", dict(eps=1.00)),
              ("t_FE = 15 nm", dict(t_FE=15e-9)),
              ("t_FE = 60 nm", dict(t_FE=60e-9)),
              ("t_FE = 86.5 nm", dict(t_FE=86.5e-9)),
@@ -1235,9 +1257,12 @@ law_cases = [("eps = -1.0%", dict(eps=-1.0)),
              ("Dit = 3e12", dict(Dit=3e12)),
              ("Dit = 1e13", dict(Dit=1e13))]
 
+# A fine sweep grid (2 mV steps) is used for the law table so that the
+# linear interpolation of the state between grid points does not leave a
+# density mismatch between the branch crossings (SI Section S5).
 law_rows = []
 for name, kw in law_cases:
-    r = law_check(**kw)
+    r = law_check(n=6401, **kw)
     if r is None:
         continue
     r["case"] = name
@@ -1255,7 +1280,7 @@ R["decoupling_law_max_err_pct_clean"] = float(
 
 # --- the strain lever: valley-resolved quantum capacitance -------------
 eps_cq = np.array([-1.0, -0.8, -0.6, -0.4, -0.2, 0.0, 0.1, 0.2, 0.3,
-                   0.4, 0.46, 0.55, 0.7, 0.9])
+                   0.4, 0.5, 0.6, 0.7, 0.8, 0.85, 0.9, 1.0])
 cq_list, mu_list, mw_list_l, fG_list = [], [], [], []
 for e in eps_cq:
     f, b, d = branch_probe(eps=float(e))
@@ -1294,11 +1319,19 @@ ax.text(R["eps_cross_GammaK_pct"] + 0.03, cq_arr.min() * 1e2 * 1.6,
 ax.set_yscale("log")
 ax.set_xlabel("Biaxial strain (%)")
 ax.set_ylabel(r"$C_{\rm Q}$ at threshold ($\mu$F/cm$^2$)")
+ax.yaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter("%g"))
+ax.yaxis.set_minor_locator(matplotlib.ticker.LogLocator(base=10, subs=(2.0, 5.0)))
+ax.yaxis.set_minor_formatter(matplotlib.ticker.FormatStrFormatter("%g"))
+ax.tick_params(axis="y", which="minor", labelsize=7)
 panel_label(ax, "(a)")
 
 ax = axs[1]
 ax.plot(eps_cq, mu_arr, "s-", color=OI["orange"], ms=3.5)
 ax.set_yscale("log")
+ax.yaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter("%g"))
+ax.yaxis.set_minor_locator(matplotlib.ticker.LogLocator(base=10, subs=(2.0, 5.0)))
+ax.yaxis.set_minor_formatter(matplotlib.ticker.FormatStrFormatter("%g"))
+ax.tick_params(axis="y", which="minor", labelsize=7)
 ax.set_xlabel("Biaxial strain (%)")
 ax.set_ylabel(r"$\mu_{\rm h}$ (cm$^2$/Vs)")
 ax2 = ax.twinx()
@@ -1321,7 +1354,7 @@ ax.scatter(sims[~clean], laws[~clean], s=26, marker="D",
 ax.set_xlim(lim)
 ax.set_ylim(lim)
 ax.set_xlabel("Memory window, simulated (V)")
-ax.set_ylabel("Memory window, from Eq. (law) (V)")
+ax.set_ylabel("Memory window, Eq. (7) (V)")
 ax.legend(frameon=True, loc="upper left", fontsize=6.5)
 ax.text(0.97, 0.06,
         f"max error {R['decoupling_law_max_err_pct']:.2f} %",

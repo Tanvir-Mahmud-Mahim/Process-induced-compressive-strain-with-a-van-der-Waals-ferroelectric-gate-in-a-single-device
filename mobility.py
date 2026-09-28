@@ -11,12 +11,13 @@ The model implements Fermi golden rule scattering rates for:
 and evaluates the mobility with the Kubo-Greenwood integral per valley.
 
 Strain enters through the Gamma-K valley separation
-    dE_GK(eps) = dE_GK0 + dE_GK_gauge * eps   (eps in %, tensile positive)
-following the first-principles gauge of Afrid et al. (npj 2DM Appl. 2026).
-The intervalley deformation potential is calibrated once (at zero strain)
-so that the model reproduces the published extrinsic mobility gauge
-(~2.4 per % compressive strain) and baseline mobility (~25 cm^2/Vs at
-p = 1e13 cm^-2, n_imp = 5e12 cm^-2, SiO2 environment).
+    dE_GK(eps) = dE_GK0 - dE_GK_gauge * eps   (eps in %, tensile positive)
+with dE_GK0 = 157 meV and a rate of 184 meV per % from the first-principles
+study of Afrid et al. (npj 2DM Appl. 2026). The intervalley deformation
+potential, the final-state broadening and the screening factor are
+calibrated once so that the model reproduces that study's extrinsic
+result: mu0 = 25 cm^2/Vs at p = 1e13 cm^-2, n_imp = 5e12 cm^-2, SiO2
+environment, and mu/mu0 = 2.37 at -1 % biaxial compression.
 """
 import numpy as np
 from scipy.optimize import brentq
@@ -26,10 +27,10 @@ import params as P
 # Final-state broadening of the intervalley threshold (represents phonon
 # dispersion, non-parabolicity, and collision broadening that smear the
 # sharp parabolic-band onset; calibrated in SI Section S2).
-SIGMA_IV = 0.090 * 1.602176634e-19  # J (90 meV, calibrated)
+SIGMA_IV = 0.050 * 1.602176634e-19  # J (50 meV, calibrated)
 # Screening reduction factor for charged-impurity scattering (accounts for
 # incomplete free-carrier screening of interface Coulomb centers).
-SCR_FACTOR = 0.8
+SCR_FACTOR = 0.86
 
 
 def smooth_step(x, sigma):

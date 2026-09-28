@@ -5,16 +5,18 @@ CuInP2S6 (CIPS) ferroelectric model.
 Two complementary descriptions are implemented:
 
 1. Quasi-static multidomain (Preisach-type) model: an ensemble of square
-   hysterons with a Gaussian distribution of coercive fields. This
-   reproduces the measured saturated loop (Pr = 5.5 uC/cm^2) and gives
-   realistic minor loops for the FeFET sweeps.
+   hysterons with a Gaussian distribution of coercive fields, with
+   Pr = 5.5 uC/cm^2 and Ec = 300 kV/cm read from the CIPS capacitor loop
+   in the Supporting Information of Lee 2026. It gives the partially
+   switched minor loops of the FeFET sweeps.
 
 2. Landau-Khalatnikov (LK) dynamics for a single domain with distributed
    coercive fields, used for switching-time analysis:
        rho dP/dt = -(alpha P + beta P^3) + E(t)
-   The kinetic coefficient rho is calibrated so that full polarization
-   reversal at roughly 3x Ec completes in about 60 us, consistent with
-   the measured programming time of CIPS MFMIS FeFETs (Lee 2026).
+   The kinetic coefficient rho is set so that full polarization reversal
+   at 1.5 Ec takes about 70 us, comparable to the 60 us switching time
+   reported for CIPS FeFETs (Lee 2026). The model contains no thermally
+   activated or nucleation-limited back-switching.
 """
 import numpy as np
 import params as P
