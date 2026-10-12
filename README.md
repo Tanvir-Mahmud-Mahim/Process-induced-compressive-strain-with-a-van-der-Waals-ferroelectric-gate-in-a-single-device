@@ -1,14 +1,48 @@
 # CIPS/WSe2 p-Type FeFET: Multiscale Simulation Code Base
 
-Code accompanying the article "Channel decoupling of the memory window in
+Code accompanying the article
+
+T.M. Mahim, M.M. Rahman, Channel decoupling of the memory window in
 CuInP2S6-gated two-dimensional ferroelectric transistors: conditions,
-limits, and implications for interface processing" (revised version).
+limits, and implications for interface processing, Materials Today
+Communications 57 (2026) 116333.
+https://doi.org/10.1016/j.mtcomm.2026.116333
 
 Repository:
 https://github.com/Tanvir-Mahmud-Mahim/Process-induced-compressive-strain-with-a-van-der-Waals-ferroelectric-gate-in-a-single-device
 
 Archived release (code, benchmarks, and figure data):
 https://doi.org/10.5281/zenodo.22084359
+
+## How to cite
+
+If you use this code, please cite the article:
+
+    T.M. Mahim, M.M. Rahman, Channel decoupling of the memory window in
+    CuInP2S6-gated two-dimensional ferroelectric transistors: conditions,
+    limits, and implications for interface processing, Materials Today
+    Communications 57 (2026) 116333.
+    https://doi.org/10.1016/j.mtcomm.2026.116333
+
+BibTeX:
+
+```bibtex
+@article{Mahim2026MTC,
+  author  = {Mahim, Tanvir M. and Rahman, M. Mosaddequr},
+  title   = {Channel decoupling of the memory window in {CuInP$_2$S$_6$}-gated
+             two-dimensional ferroelectric transistors: conditions, limits,
+             and implications for interface processing},
+  journal = {Materials Today Communications},
+  volume  = {57},
+  pages   = {116333},
+  year    = {2026},
+  doi     = {10.1016/j.mtcomm.2026.116333}
+}
+```
+
+To cite the code itself, use the Zenodo concept DOI
+10.5281/zenodo.22084359, which always resolves to the latest release.
+A machine-readable citation is provided in CITATION.cff.
 
 ## Requirements
 

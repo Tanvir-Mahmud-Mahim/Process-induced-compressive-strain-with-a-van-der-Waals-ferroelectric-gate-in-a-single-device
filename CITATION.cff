@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the article below."
+title: "Strain-Augmented CuInP2S6/WSe2 p-Type FeFET: Simulation Code, Benchmarks, and Figure Data"
+type: software
+authors:
+  - family-names: Mahim
+    given-names: Tanvir M.
+    orcid: "https://orcid.org/0000-0002-4550-3248"
+    affiliation: BRAC University
+  - family-names: Rahman
+    given-names: M. Mosaddequr
+    affiliation: BRAC University
+version: 2.0.0
+doi: 10.5281/zenodo.22084359
+repository-code: "https://github.com/Tanvir-Mahmud-Mahim/Process-induced-compressive-strain-with-a-van-der-Waals-ferroelectric-gate-in-a-single-device"
+license: Apache-2.0
+preferred-citation:
+  type: article
+  title: "Channel decoupling of the memory window in CuInP2S6-gated two-dimensional ferroelectric transistors: conditions, limits, and implications for interface processing"
+  authors:
+    - family-names: Mahim
+      given-names: Tanvir M.
+      orcid: "https://orcid.org/0000-0002-4550-3248"
+      affiliation: BRAC University
+    - family-names: Rahman
+      given-names: M. Mosaddequr
+      affiliation: BRAC University
+  journal: Materials Today Communications
+  volume: 57
+  start: 116333
+  year: 2026
+  doi: 10.1016/j.mtcomm.2026.116333
+  url: "https://doi.org/10.1016/j.mtcomm.2026.116333"
